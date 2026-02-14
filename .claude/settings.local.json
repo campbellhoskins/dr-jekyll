@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:sierra.ai)",
+      "WebFetch(domain:mem0.ai)",
+      "WebFetch(domain:docs.mem0.ai)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:aws.amazon.com)",
+      "WebFetch(domain:gist.github.com)",
+      "Bash(git add:*)"
+    ]
+  }
+}
