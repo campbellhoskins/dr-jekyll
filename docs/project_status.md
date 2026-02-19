@@ -1,15 +1,15 @@
 # PO Pro - Project Status
 
-**Last Updated:** February 9, 2026
+**Last Updated:** February 18, 2026
 
 ---
 
-## Current Phase: Planning Complete, Ready for Development
+## Current Phase: B1 (Agent Core — Data Extraction) Complete
 
 ### Overall Progress
 
 ```
-[████████░░░░░░░░░░░░] 10% Complete
+[████████████░░░░░░░░] 15% Complete
 ```
 
 | Phase | Status | Notes |
@@ -17,14 +17,18 @@
 | Requirements Gathering | ✅ Complete | All questions answered |
 | Product Specification | ✅ Complete | PRODUCT_SPEC.md finalized |
 | System Architecture | ✅ Complete | docs/architecture.md created |
-| Project Setup | ⬜ Not Started | Next.js, Prisma, etc. |
-| Database Schema | ⬜ Not Started | Prisma models |
+| Implementation Planning | ✅ Complete | PLAN_IMPLEMENTATION.md + B1.md |
+| Project Setup | ✅ Complete | Next.js 16, TypeScript, Jest, Zod |
+| B1: LLM Service | ✅ Complete | Provider-agnostic with retry + fallback |
+| B1: Data Extraction | ✅ Complete | 39 mocked tests passing |
+| B1: CLI Test Harness | ✅ Complete | --verbose, --file, --all-fixtures |
+| B1: Live Tests | ⏳ Blocked | 9 tests written, needs funded API key |
+| B1.5: Policy/Decision/Counter | ⬜ Not Started | Deferred from original B1 scope |
+| B2: Data Layer | ⬜ Not Started | Prisma models, CRUD APIs |
 | Authentication | ⬜ Not Started | Google OAuth via NextAuth |
 | Gmail Integration | ⬜ Not Started | OAuth + API |
-| Core Agent Logic | ⬜ Not Started | LLM + Policy Engine |
 | Dashboard UI | ⬜ Not Started | React components |
 | Background Workers | ⬜ Not Started | Email polling, reminders |
-| Testing Suite | ⬜ Not Started | Unit, integration, E2E |
 | Deployment | ⬜ Not Started | Vercel + Railway |
 
 ---
@@ -32,16 +36,16 @@
 ## Milestones
 
 ### Milestone 1: Project Foundation
-**Status:** ⬜ Not Started
+**Status:** 🟡 Partial (B1 scope complete, Prisma/Playwright deferred)
 
-- [ ] Initialize Next.js project with App Router
-- [ ] Configure TypeScript
-- [ ] Set up Prisma with Neon database
-- [ ] Configure ESLint and Prettier
-- [ ] Set up Jest for unit testing
-- [ ] Set up Playwright for E2E testing
-- [ ] Create initial database schema
-- [ ] Configure environment variables
+- [x] Initialize Next.js project with App Router
+- [x] Configure TypeScript
+- [ ] Set up Prisma with Neon database (B2)
+- [x] Configure ESLint
+- [x] Set up Jest for unit testing (mocked + live integration configs)
+- [ ] Set up Playwright for E2E testing (F2+)
+- [ ] Create initial database schema (B2)
+- [x] Configure environment variables (.env.local)
 
 ### Milestone 2: Authentication & Onboarding
 **Status:** ⬜ Not Started
@@ -87,15 +91,19 @@
 - [ ] Disconnection handling
 
 ### Milestone 6: Agent Core Logic
-**Status:** ⬜ Not Started
+**Status:** 🟡 B1 Complete (extraction only), B1.5 pending
 
-- [ ] LLM Service (provider-agnostic with Claude primary + OpenAI fallback)
-- [ ] Email parsing service
-- [ ] Quote data extraction
-- [ ] Policy evaluation engine
-- [ ] Counter-offer generation
-- [ ] Escalation logic
-- [ ] Context window management
+- [x] LLM Service (provider-agnostic with Claude primary + OpenAI fallback)
+- [x] Quote data extraction (ExtractedQuoteData matching spec Section 3.11)
+- [x] Output parser (handles messy LLM output, markdown blocks, numeric strings)
+- [x] Extraction prompts (all spec fields: quotedPrice, quotedPriceCurrency, quotedPriceUsd, availableQuantity, moq, leadTimeDays, paymentTerms, validityPeriod)
+- [x] Hardcoded USD currency conversion (real API in B4)
+- [x] CLI test harness (--verbose, --file, --all-fixtures, --provider, --model)
+- [x] 9 supplier email test fixtures
+- [ ] Policy evaluation engine (B1.5)
+- [ ] Counter-offer generation (B1.5)
+- [ ] Decision logic — accept/counter/escalate/clarify (B1.5)
+- [ ] Context window management (B3)
 
 ### Milestone 7: Approval Flow
 **Status:** ⬜ Not Started
@@ -143,27 +151,32 @@
 
 ## Known Issues & Blockers
 
-*None currently - project is in planning phase.*
+- **Anthropic API key needs credits** — Live integration tests (9 tests) and CLI harness require a funded API key. Mocked tests (39 tests) work without it.
 
 ---
 
 ## Next Steps
 
-1. **Initialize Project**
-   - Create Next.js app with TypeScript
-   - Set up Prisma and connect to Neon
-   - Configure testing frameworks
-
-2. **Begin TDD Cycle**
-   - Write tests for authentication flow
-   - Implement authentication to pass tests
-   - Continue with supplier management
+1. **Fund Anthropic API key** — Add credits to validate live extraction tests and iterate on prompt quality
+2. **B1.5: Policy Evaluation + Decision + Counter-Offer** — Complete the remaining agent stages deferred from B1
+3. **B2: Data Layer** — Prisma schema, database migrations, CRUD API endpoints
+4. **F1: Frontend Foundation** — Next.js auth, layout, navigation (can parallel with B1.5/B2)
 
 ---
 
 ## Technical Debt
 
-*None currently - starting fresh.*
+- Hardcoded USD exchange rates in `src/lib/agent/extractor.ts` (to be replaced with real API in B4)
+
+---
+
+## Test Suite Summary
+
+| Suite | Tests | Status | Command |
+|-------|-------|--------|---------|
+| Unit (mocked) | 39 | ✅ All passing | `npm test` |
+| Live integration | 9 | ⏳ Blocked (no API credits) | `npm run test:live` |
+| E2E (Playwright) | 0 | Not started | `npm run test:e2e` |
 
 ---
 
