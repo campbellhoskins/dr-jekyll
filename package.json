@@ -11,7 +11,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:live": "jest --config jest.integration.config.ts",
-    "extract": "tsx src/cli/extract.ts"
+    "extract": "tsx src/cli/extract.ts",
+    "pipeline": "tsx src/cli/pipeline.ts"
   },
   "repository": {
     "type": "git",

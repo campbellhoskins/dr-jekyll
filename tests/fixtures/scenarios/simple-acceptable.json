@@ -1,0 +1,15 @@
+{
+  "name": "simple-acceptable-quote",
+  "description": "Supplier quotes within all rule parameters — should accept",
+  "supplierMessage": "Hi John,\n\nThanks for your inquiry about the bamboo cutting boards.\n\nWe can offer the following:\n- Unit price: $4.50 USD\n- MOQ: 500 pieces\n- Lead time: 25-30 days after payment\n- Payment: 30% deposit, balance before shipping\n- Shipping: FOB Shenzhen\n\nLet me know if you'd like to proceed.\n\nBest regards,\nLisa Wang",
+  "negotiationRules": "Accept if price is at or below $5.00 per unit. Lead time must be under 45 days. Payment terms of 30% deposit are acceptable. MOQ of 500 is fine.",
+  "escalationTriggers": "Escalate if MOQ exceeds 1000 units. Escalate if supplier mentions discontinuation or product changes. Escalate if price exceeds $6.00 per unit.",
+  "orderContext": {
+    "skuName": "Bamboo Cutting Board - Medium",
+    "supplierSku": "BCB-M-001",
+    "quantityRequested": "500",
+    "lastKnownPrice": 4.25
+  },
+  "expectedAction": "accept",
+  "expectedComplianceStatus": "compliant"
+}

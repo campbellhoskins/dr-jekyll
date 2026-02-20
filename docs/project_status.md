@@ -1,15 +1,15 @@
 # PO Pro - Project Status
 
-**Last Updated:** February 18, 2026
+**Last Updated:** February 19, 2026
 
 ---
 
-## Current Phase: B1 (Agent Core — Data Extraction) Complete
+## Current Phase: B1.5 (Agent Core — Full Pipeline) Complete
 
 ### Overall Progress
 
 ```
-[████████████░░░░░░░░] 15% Complete
+[████████████████░░░░] 20% Complete
 ```
 
 | Phase | Status | Notes |
@@ -20,10 +20,12 @@
 | Implementation Planning | ✅ Complete | PLAN_IMPLEMENTATION.md + B1.md |
 | Project Setup | ✅ Complete | Next.js 16, TypeScript, Jest, Zod |
 | B1: LLM Service | ✅ Complete | Provider-agnostic with retry + fallback |
-| B1: Data Extraction | ✅ Complete | 39 mocked tests passing |
-| B1: CLI Test Harness | ✅ Complete | --verbose, --file, --all-fixtures |
-| B1: Live Tests | ⏳ Blocked | 9 tests written, needs funded API key |
-| B1.5: Policy/Decision/Counter | ⬜ Not Started | Deferred from original B1 scope |
+| B1: Data Extraction | ✅ Complete | 9 live extraction tests passing |
+| B1.5: Policy Evaluation | ✅ Complete | LLM-based rule compliance check |
+| B1.5: Decision Engine | ✅ Complete | Pre-policy checks + post-policy guardrails |
+| B1.5: Response Generation | ✅ Complete | Counter-offer/clarification emails, approval proposals |
+| B1.5: Agent Pipeline | ✅ Complete | Full orchestrator: extract → check → evaluate → decide → generate |
+| B1.5: CLI + Live Tests | ✅ Complete | 89 mocked + 16 live tests passing |
 | B2: Data Layer | ⬜ Not Started | Prisma models, CRUD APIs |
 | Authentication | ⬜ Not Started | Google OAuth via NextAuth |
 | Gmail Integration | ⬜ Not Started | OAuth + API |
@@ -91,18 +93,22 @@
 - [ ] Disconnection handling
 
 ### Milestone 6: Agent Core Logic
-**Status:** 🟡 B1 Complete (extraction only), B1.5 pending
+**Status:** ✅ Complete (B1 + B1.5), context window management deferred to B3
 
 - [x] LLM Service (provider-agnostic with Claude primary + OpenAI fallback)
-- [x] Quote data extraction (ExtractedQuoteData matching spec Section 3.11)
+- [x] Quote data extraction (ExtractedQuoteData with leadTimeMinDays/leadTimeMaxDays range)
 - [x] Output parser (handles messy LLM output, markdown blocks, numeric strings)
-- [x] Extraction prompts (all spec fields: quotedPrice, quotedPriceCurrency, quotedPriceUsd, availableQuantity, moq, leadTimeDays, paymentTerms, validityPeriod)
+- [x] Extraction prompts (all spec fields)
 - [x] Hardcoded USD currency conversion (real API in B4)
-- [x] CLI test harness (--verbose, --file, --all-fixtures, --provider, --model)
-- [x] 9 supplier email test fixtures
-- [ ] Policy evaluation engine (B1.5)
-- [ ] Counter-offer generation (B1.5)
-- [ ] Decision logic — accept/counter/escalate/clarify (B1.5)
+- [x] Policy evaluation engine — LLM evaluates extracted data against plain-English rules
+- [x] Decision engine — deterministic pre-policy checks + post-policy guardrails
+- [x] Counter-offer email generation — LLM drafts professional counter-offers
+- [x] Clarification email generation — LLM drafts clarification requests
+- [x] Accept → deterministic ProposedApproval (quantity, price, total, summary)
+- [x] Escalate → deterministic escalation reason passthrough
+- [x] Full AgentPipeline orchestrator (extract → check → evaluate → decide → generate)
+- [x] CLI harnesses: `npm run extract` (extraction only) + `npm run pipeline` (full pipeline)
+- [x] 9 supplier email fixtures + 7 scenario fixtures
 - [ ] Context window management (B3)
 
 ### Milestone 7: Approval Flow
@@ -151,22 +157,22 @@
 
 ## Known Issues & Blockers
 
-- **Anthropic API key needs credits** — Live integration tests (9 tests) and CLI harness require a funded API key. Mocked tests (39 tests) work without it.
+- **Haiku unreliable on MOQ escalation triggers** — Haiku sometimes ignores escalation triggers when the overall deal looks good (e.g., low price but high MOQ). The deterministic decision engine catches this when the LLM correctly sets `escalationTriggered=true`, but Haiku doesn't always do so. A stronger model (Sonnet/Opus) is more reliable for production.
 
 ---
 
 ## Next Steps
 
-1. **Fund Anthropic API key** — Add credits to validate live extraction tests and iterate on prompt quality
-2. **B1.5: Policy Evaluation + Decision + Counter-Offer** — Complete the remaining agent stages deferred from B1
-3. **B2: Data Layer** — Prisma schema, database migrations, CRUD API endpoints
-4. **F1: Frontend Foundation** — Next.js auth, layout, navigation (can parallel with B1.5/B2)
+1. **B2: Data Layer** — Prisma schema, database migrations, CRUD API endpoints
+2. **F1: Frontend Foundation** — Next.js auth, layout, navigation (can parallel with B2)
+3. **B3: Agent + Memory** — Integrate agent with persistence, conversation context, audit logging
 
 ---
 
 ## Technical Debt
 
 - Hardcoded USD exchange rates in `src/lib/agent/extractor.ts` (to be replaced with real API in B4)
+- Haiku escalation trigger reliability — consider upgrading to Sonnet for policy evaluation in production
 
 ---
 
@@ -174,8 +180,8 @@
 
 | Suite | Tests | Status | Command |
 |-------|-------|--------|---------|
-| Unit (mocked) | 39 | ✅ All passing | `npm test` |
-| Live integration | 9 | ⏳ Blocked (no API credits) | `npm run test:live` |
+| Unit (mocked) | 89 | ✅ All passing | `npm test` |
+| Live integration | 16 | ✅ All passing | `npm run test:live` |
 | E2E (Playwright) | 0 | Not started | `npm run test:e2e` |
 
 ---

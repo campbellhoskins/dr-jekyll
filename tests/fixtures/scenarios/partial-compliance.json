@@ -1,0 +1,15 @@
+{
+  "name": "partial-compliance",
+  "description": "Price is acceptable but lead time exceeds preference — should counter for better terms",
+  "supplierMessage": "Dear buyer,\n\nFor the yoga mats, we can offer:\n- Unit price: $11.50 USD\n- MOQ: 200 pieces\n- Lead time: 40-45 days\n- Payment: 50% advance, 50% against B/L\n- Shipping: FOB Dongguan\n\nPlease confirm if acceptable.\n\nBest regards,\nTony",
+  "negotiationRules": "Target price is $12.00 per unit, acceptable up to $13.00. Lead time must be under 35 days. Prefer 30% deposit terms, but 50% advance is negotiable. MOQ under 300 is acceptable.",
+  "escalationTriggers": "Escalate if price exceeds $15.00 per unit. Escalate if lead time exceeds 60 days. Escalate if supplier requires full prepayment.",
+  "orderContext": {
+    "skuName": "Premium Yoga Mat 6mm",
+    "supplierSku": "YM-6MM-PRE",
+    "quantityRequested": "200",
+    "lastKnownPrice": 11.00
+  },
+  "expectedAction": "counter",
+  "expectedComplianceStatus": "partial"
+}

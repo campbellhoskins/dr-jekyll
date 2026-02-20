@@ -9,7 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-*Nothing unreleased — all changes shipped in 0.1.0.*
+*Nothing unreleased — all changes shipped in 0.2.0.*
+
+---
+
+## [0.2.0] - 2026-02-19
+
+### Added — B1.5: Policy Evaluation, Decision Engine, Response Generation
+
+**Policy Evaluator** (`src/lib/agent/policy-evaluator.ts`)
+- LLM-based evaluation of extracted quote data against merchant's plain-English negotiation rules and escalation triggers
+- Returns structured result: rulesMatched, complianceStatus (compliant/non_compliant/partial), recommendedAction, reasoning, counterTerms
+- Graceful fallback to escalation on LLM errors or unparseable output
+
+**Decision Engine** (`src/lib/agent/decision-engine.ts`)
+- Pure logic (no LLM): deterministic pre-policy escalation checks for failed extraction, low confidence (< 0.3), and discontinuation/unavailable keywords in notes
+- Post-policy guardrail: escalation trigger always overrides to escalate regardless of LLM recommended action
+
+**Response Generator** (`src/lib/agent/response-generator.ts`)
+- Accept: deterministic ProposedApproval (quantity, price, total, summary) — no LLM call
+- Counter: LLM generates professional counter-offer email with proposed terms
+- Clarify: LLM generates clarification email listing missing information
+- Escalate: deterministic escalation reason passthrough — no LLM call
+
+**Agent Pipeline** (`src/lib/agent/pipeline.ts`)
+- Full orchestrator: extract → pre-policy check → policy evaluate → decide → generate
+- Short-circuits to escalation on pre-policy failures (1 LLM call instead of 2-3)
+- Produces complete `AgentProcessResponse` matching the API contract from PLAN_IMPLEMENTATION.md
+
+**Pipeline CLI** (`src/cli/pipeline.ts`)
+- `npm run pipeline -- --scenario <path>` — run a single scenario
+- `npm run pipeline -- --all-scenarios` — run all 7 scenario fixtures
+- `--verbose` flag shows every pipeline stage (extraction, pre-checks, policy eval, decision, response gen)
+
+**Test Infrastructure**
+- 50 new mocked unit tests across 4 test files (decision engine: 15, policy evaluator: 9, response generator: 8, pipeline: 12, prompts: 6)
+- 7 new live pipeline integration tests
+- 7 scenario fixture files: simple-acceptable, counter-price-high, escalation-moq, escalation-discontinued, clarification-needed, low-confidence, partial-compliance
+
+### Changed
+- `leadTimeDays` split into `leadTimeMinDays` / `leadTimeMaxDays` — preserves full range from supplier quotes (e.g., "25-30 days" → min=25, max=30)
+- Output parser now rounds float values to integers for int fields (moq, availableQuantity, leadTime)
+- Output parser allows `quotedPriceCurrency: null` from LLM, coerces to "USD" default
+- Counter-offer and clarification prompts use 2048 max tokens (up from 1024) to prevent truncation
 
 ---
 

@@ -1,7 +1,11 @@
 import {
   LLMExtractionOutputSchema,
+  LLMPolicyDecisionOutputSchema,
+  LLMResponseGenerationOutputSchema,
   normalizeCurrency,
   type ExtractedQuoteData,
+  type LLMPolicyDecisionOutput,
+  type LLMResponseGenerationOutput,
 } from "./types";
 
 export interface ParseResult {
@@ -94,7 +98,7 @@ export function parseExtractionOutput(raw: string): ParseResult {
  * - Markdown code blocks (```json ... ```)
  * - JSON embedded in prose text
  */
-function extractJson(raw: string): string | null {
+export function extractJson(raw: string): string | null {
   const trimmed = raw.trim();
 
   // Try 1: It's already clean JSON
@@ -190,4 +194,78 @@ function coerceNumericStrings(
   }
 
   return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// B1.5: Policy Decision Output Parser
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface PolicyDecisionParseResult {
+  success: boolean;
+  data: LLMPolicyDecisionOutput | null;
+  error: string | null;
+}
+
+export function parsePolicyDecisionOutput(
+  raw: string
+): PolicyDecisionParseResult {
+  const jsonString = extractJson(raw);
+  if (!jsonString) {
+    return { success: false, data: null, error: "Could not find valid JSON in LLM output" };
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonString);
+  } catch {
+    return { success: false, data: null, error: `Invalid JSON: ${jsonString.substring(0, 100)}...` };
+  }
+
+  const validation = LLMPolicyDecisionOutputSchema.safeParse(parsed);
+  if (!validation.success) {
+    return {
+      success: false,
+      data: null,
+      error: `Validation failed: ${JSON.stringify(validation.error.issues)}`,
+    };
+  }
+
+  return { success: true, data: validation.data, error: null };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// B1.5: Response Generation Output Parser
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ResponseGenerationParseResult {
+  success: boolean;
+  data: LLMResponseGenerationOutput | null;
+  error: string | null;
+}
+
+export function parseResponseGenerationOutput(
+  raw: string
+): ResponseGenerationParseResult {
+  const jsonString = extractJson(raw);
+  if (!jsonString) {
+    return { success: false, data: null, error: "Could not find valid JSON in LLM output" };
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonString);
+  } catch {
+    return { success: false, data: null, error: `Invalid JSON: ${jsonString.substring(0, 100)}...` };
+  }
+
+  const validation = LLMResponseGenerationOutputSchema.safeParse(parsed);
+  if (!validation.success) {
+    return {
+      success: false,
+      data: null,
+      error: `Validation failed: ${JSON.stringify(validation.error.issues)}`,
+    };
+  }
+
+  return { success: true, data: validation.data, error: null };
 }

@@ -1,0 +1,15 @@
+{
+  "name": "low-confidence-escalation",
+  "description": "Supplier email is conversational with no numbers — extraction confidence too low, should escalate via pre-policy check",
+  "supplierMessage": "Hey!\n\nGreat to hear from you again. How was your trip to the trade show? We just finished a big production run for another customer so we have some capacity opening up next month. Let me know what you're thinking and I'll put together some numbers for you.\n\nTalk soon,\nDave",
+  "negotiationRules": "Accept if price is below $5.00 per unit.",
+  "escalationTriggers": "Escalate if no pricing provided after clarification.",
+  "orderContext": {
+    "skuName": "Silicone Phone Case",
+    "supplierSku": "SPC-001",
+    "quantityRequested": "1000",
+    "lastKnownPrice": 3.50
+  },
+  "expectedAction": "escalate",
+  "expectedComplianceStatus": "partial"
+}
