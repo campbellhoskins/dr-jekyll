@@ -80,7 +80,7 @@ function printResult(result: ExtractionResult, source: string): void {
   );
   console.log(`  MOQ:               ${d.moq !== null ? d.moq : "—"}`);
   console.log(
-    `  Lead Time:         ${d.leadTimeDays !== null ? `${d.leadTimeDays} days` : "—"}`
+    `  Lead Time:         ${d.leadTimeMinDays !== null ? (d.leadTimeMaxDays !== null && d.leadTimeMaxDays !== d.leadTimeMinDays ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : `${d.leadTimeMinDays} days`) : "—"}`
   );
   console.log(
     `  Payment Terms:     ${d.paymentTerms ?? "—"}`

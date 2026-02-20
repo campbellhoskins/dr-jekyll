@@ -9,7 +9,8 @@ Required JSON fields:
 - quotedPriceCurrency: string — ISO 4217 currency code (e.g., "USD", "CNY", "EUR"). Default to "USD" if the currency is not explicitly stated but prices appear to be in dollars.
 - availableQuantity: number or null — the quantity the supplier is quoting for (not MOQ)
 - moq: number or null — minimum order quantity, if mentioned
-- leadTimeDays: number or null — lead time in days. Convert weeks to days (1 week = 7 days). If a range is given (e.g., "25-30 days"), use the midpoint.
+- leadTimeMinDays: integer or null — minimum lead time in days. Convert weeks to days (1 week = 7 days). If a single value is given (e.g., "30 days"), set both min and max to that value.
+- leadTimeMaxDays: integer or null — maximum lead time in days. If a range is given (e.g., "25-30 days"), set leadTimeMinDays to 25 and leadTimeMaxDays to 30.
 - paymentTerms: string or null — payment terms as stated (e.g., "30% deposit, balance before shipping", "T/T", "NET 30")
 - validityPeriod: string or null — how long the quote is valid, if mentioned (e.g., "valid for 30 days", "expires March 15")
 - confidence: number between 0.0 and 1.0 — how confident you are in the extraction:

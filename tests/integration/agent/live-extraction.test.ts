@@ -85,7 +85,8 @@ describeOrSkip("Live extraction tests", () => {
     expect(result.success).toBe(true);
     expect(result.data!.quotedPrice).toBeCloseTo(4.2, 1);
     expect(result.data!.availableQuantity).toBe(300);
-    expect(result.data!.leadTimeDays).toBe(45);
+    expect(result.data!.leadTimeMinDays).toBe(45);
+    expect(result.data!.leadTimeMaxDays).toBe(45);
   });
 
   it("recognizes rejection/discontinuation", async () => {

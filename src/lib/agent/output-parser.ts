@@ -62,7 +62,7 @@ export function parseExtractionOutput(raw: string): ParseResult {
   const output = validation.data;
 
   // Step 5: Normalize currency and clamp confidence
-  const normalizedCurrency = normalizeCurrency(output.quotedPriceCurrency);
+  const normalizedCurrency = normalizeCurrency(output.quotedPriceCurrency ?? "USD");
   const clampedConfidence = Math.max(0, Math.min(1, output.confidence));
 
   // Step 6: Build ExtractedQuoteData (quotedPriceUsd is set later by extractor)
@@ -72,7 +72,8 @@ export function parseExtractionOutput(raw: string): ParseResult {
     quotedPriceUsd: null, // Computed by extractor after parsing
     availableQuantity: output.availableQuantity,
     moq: output.moq,
-    leadTimeDays: output.leadTimeDays,
+    leadTimeMinDays: output.leadTimeMinDays,
+    leadTimeMaxDays: output.leadTimeMaxDays,
     paymentTerms: output.paymentTerms,
     validityPeriod: output.validityPeriod,
     rawExtractionJson: parsed, // Preserve original parsed JSON including extra fields
@@ -159,8 +160,8 @@ function findClosingBrace(str: string, start: number): number {
 }
 
 /**
- * Coerces string values that look like numbers into actual numbers.
- * This handles LLMs that return "4.50" instead of 4.50.
+ * Coerces string values that look like numbers into actual numbers,
+ * and rounds integer fields since LLMs sometimes return floats.
  */
 function coerceNumericStrings(
   obj: Record<string, unknown>
@@ -168,10 +169,12 @@ function coerceNumericStrings(
   const numericFields = [
     "quotedPrice",
     "moq",
-    "leadTimeDays",
+    "leadTimeMinDays",
+    "leadTimeMaxDays",
     "availableQuantity",
     "confidence",
   ];
+  const integerFields = ["moq", "leadTimeMinDays", "leadTimeMaxDays", "availableQuantity"];
   const result = { ...obj };
 
   for (const field of numericFields) {
@@ -180,6 +183,9 @@ function coerceNumericStrings(
       if (!isNaN(parsed)) {
         result[field] = parsed;
       }
+    }
+    if (integerFields.includes(field) && typeof result[field] === "number") {
+      result[field] = Math.round(result[field] as number);
     }
   }
 

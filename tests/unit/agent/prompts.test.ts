@@ -23,7 +23,8 @@ describe("buildExtractionPrompt", () => {
     expect(sys).toContain("quotedPriceCurrency");
     expect(sys).toContain("availableQuantity");
     expect(sys).toContain("moq");
-    expect(sys).toContain("leadTimeDays");
+    expect(sys).toContain("leadTimeMinDays");
+    expect(sys).toContain("leadTimeMaxDays");
     expect(sys).toContain("paymentTerms");
     expect(sys).toContain("validityPeriod");
   });

@@ -7,7 +7,8 @@ describe("parseExtractionOutput", () => {
       quotedPriceCurrency: "USD",
       availableQuantity: null,
       moq: 500,
-      leadTimeDays: 25,
+      leadTimeMinDays: 25,
+      leadTimeMaxDays: 30,
       paymentTerms: "30% deposit",
       validityPeriod: null,
       confidence: 0.95,
@@ -50,7 +51,8 @@ describe("parseExtractionOutput", () => {
       quotedPriceCurrency: "USD",
       availableQuantity: null,
       moq: null,
-      leadTimeDays: null,
+      leadTimeMinDays: null,
+      leadTimeMaxDays: null,
       paymentTerms: null,
       validityPeriod: null,
       confidence: 0.2,
@@ -63,7 +65,8 @@ describe("parseExtractionOutput", () => {
     expect(result.data!.quotedPrice).toBeNull();
     expect(result.data!.availableQuantity).toBeNull();
     expect(result.data!.moq).toBeNull();
-    expect(result.data!.leadTimeDays).toBeNull();
+    expect(result.data!.leadTimeMinDays).toBeNull();
+    expect(result.data!.leadTimeMaxDays).toBeNull();
     expect(result.data!.paymentTerms).toBeNull();
     expect(result.data!.validityPeriod).toBeNull();
   });

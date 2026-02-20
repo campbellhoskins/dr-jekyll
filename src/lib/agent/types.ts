@@ -21,10 +21,11 @@ export function normalizeCurrency(raw: string): string {
 // confidence and notes that live in ExtractionResult, not ExtractedQuoteData.
 export const LLMExtractionOutputSchema = z.object({
   quotedPrice: z.union([z.number(), z.null()]).optional().default(null),
-  quotedPriceCurrency: z.string().optional().default("USD"),
+  quotedPriceCurrency: z.union([z.string(), z.null()]).optional().default("USD"),
   availableQuantity: z.union([z.number().int(), z.null()]).optional().default(null),
   moq: z.union([z.number().int(), z.null()]).optional().default(null),
-  leadTimeDays: z.union([z.number().int(), z.null()]).optional().default(null),
+  leadTimeMinDays: z.union([z.number().int(), z.null()]).optional().default(null),
+  leadTimeMaxDays: z.union([z.number().int(), z.null()]).optional().default(null),
   paymentTerms: z.union([z.string(), z.null()]).optional().default(null),
   validityPeriod: z.union([z.string(), z.null()]).optional().default(null),
   confidence: z.number().optional().default(0.5),
@@ -42,7 +43,8 @@ export interface ExtractedQuoteData {
   quotedPriceUsd: number | null;
   availableQuantity: number | null;
   moq: number | null;
-  leadTimeDays: number | null;
+  leadTimeMinDays: number | null;
+  leadTimeMaxDays: number | null;
   paymentTerms: string | null;
   validityPeriod: string | null;
   rawExtractionJson: Record<string, unknown>;
