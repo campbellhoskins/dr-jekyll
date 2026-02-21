@@ -1,6 +1,6 @@
 # PO Pro - Project Status
 
-**Last Updated:** February 19, 2026
+**Last Updated:** February 21, 2026
 
 ---
 
@@ -19,13 +19,13 @@
 | System Architecture | ✅ Complete | docs/architecture.md created |
 | Implementation Planning | ✅ Complete | PLAN_IMPLEMENTATION.md + B1.md |
 | Project Setup | ✅ Complete | Next.js 16, TypeScript, Jest, Zod |
-| B1: LLM Service | ✅ Complete | Provider-agnostic with retry + fallback |
+| B1: LLM Service | ✅ Complete | Claude structured output (tool_use), no fallback wired |
 | B1: Data Extraction | ✅ Complete | 9 live extraction tests passing |
 | B1.5: Policy Evaluation | ✅ Complete | LLM-based rule compliance check |
 | B1.5: Decision Engine | ✅ Complete | Pre-policy checks + post-policy guardrails |
 | B1.5: Response Generation | ✅ Complete | Counter-offer/clarification emails, approval proposals |
-| B1.5: Agent Pipeline | ✅ Complete | Full orchestrator: extract → check → evaluate → decide → generate |
-| B1.5: CLI + Live Tests | ✅ Complete | 89 mocked + 16 live tests passing |
+| B1.5: Agent Pipeline | ✅ Complete | Full orchestrator with structured output |
+| B1.5: CLI + Live Tests | ✅ Complete | 93 mocked + 21 live tests passing |
 | B2: Data Layer | ⬜ Not Started | Prisma models, CRUD APIs |
 | Authentication | ⬜ Not Started | Google OAuth via NextAuth |
 | Gmail Integration | ⬜ Not Started | OAuth + API |
@@ -173,6 +173,7 @@
 
 - Hardcoded USD exchange rates in `src/lib/agent/extractor.ts` (to be replaced with real API in B4)
 - Haiku escalation trigger reliability — consider upgrading to Sonnet for policy evaluation in production
+- OpenAI fallback provider kept in codebase but not wired up — re-enable when needed
 
 ---
 
@@ -180,8 +181,8 @@
 
 | Suite | Tests | Status | Command |
 |-------|-------|--------|---------|
-| Unit (mocked) | 89 | ✅ All passing | `npm test` |
-| Live integration | 16 | ✅ All passing | `npm run test:live` |
+| Unit (mocked) | 93 | ✅ All passing | `npm test` |
+| Live integration | 21 | ✅ All passing | `npm run test:live` |
 | E2E (Playwright) | 0 | Not started | `npm run test:e2e` |
 
 ---

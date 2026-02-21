@@ -41,6 +41,8 @@ export class Extractor {
     let provider: string;
     let model: string;
     let latencyMs: number;
+    let inputTokens: number;
+    let outputTokens: number;
     let retryCount: number;
 
     try {
@@ -49,7 +51,9 @@ export class Extractor {
       provider = llmResult.response.provider;
       model = llmResult.response.model;
       latencyMs = llmResult.response.latencyMs;
-      retryCount = llmResult.attempts.length - 1; // First attempt isn't a retry
+      inputTokens = llmResult.response.inputTokens;
+      outputTokens = llmResult.response.outputTokens;
+      retryCount = llmResult.attempts.length - 1;
     } catch (error) {
       return {
         success: false,
@@ -60,6 +64,8 @@ export class Extractor {
         provider: "unknown",
         model: "unknown",
         latencyMs: 0,
+        inputTokens: 0,
+        outputTokens: 0,
         retryCount: 0,
       };
     }
@@ -77,6 +83,8 @@ export class Extractor {
         provider,
         model,
         latencyMs,
+        inputTokens,
+        outputTokens,
         retryCount,
       };
     }
@@ -96,6 +104,8 @@ export class Extractor {
       provider,
       model,
       latencyMs,
+      inputTokens,
+      outputTokens,
       retryCount,
     };
   }

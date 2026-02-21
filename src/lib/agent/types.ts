@@ -34,6 +34,58 @@ export const LLMExtractionOutputSchema = z.object({
 
 export type LLMExtractionOutput = z.infer<typeof LLMExtractionOutputSchema>;
 
+// ─── JSON Schemas for Claude structured output (tool_use) ─────────────────────
+// These mirror the Zod schemas above but in JSON Schema format for the API.
+
+export const EXTRACTION_JSON_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    quotedPrice: { type: ["number", "null"], description: "Per-unit price quoted by supplier" },
+    quotedPriceCurrency: { type: ["string", "null"], description: "ISO 4217 currency code (e.g. USD, CNY). Default USD." },
+    availableQuantity: { type: ["integer", "null"], description: "Quantity the supplier quoted for (not MOQ)" },
+    moq: { type: ["integer", "null"], description: "Minimum order quantity if mentioned" },
+    leadTimeMinDays: { type: ["integer", "null"], description: "Minimum lead time in days" },
+    leadTimeMaxDays: { type: ["integer", "null"], description: "Maximum lead time in days. Same as min if single value." },
+    paymentTerms: { type: ["string", "null"], description: "Payment terms as stated" },
+    validityPeriod: { type: ["string", "null"], description: "Quote validity period if mentioned" },
+    confidence: { type: "number", description: "0.0-1.0 confidence in extraction. 0.9+ = all fields clear, 0.0-0.2 = no data found." },
+    notes: { type: "array", items: { type: "string" }, description: "Observations that don't fit structured fields" },
+  },
+  required: ["quotedPrice", "quotedPriceCurrency", "confidence", "notes"],
+};
+
+export const POLICY_DECISION_JSON_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    rulesMatched: { type: "array", items: { type: "string" }, description: "Rules relevant to this quote" },
+    complianceStatus: { type: "string", enum: ["compliant", "non_compliant", "partial"], description: "How well the quote matches rules" },
+    recommendedAction: { type: "string", enum: ["accept", "counter", "escalate", "clarify"], description: "Next action to take" },
+    reasoning: { type: "string", description: "Detailed explanation of evaluation" },
+    escalationTriggered: { type: "boolean", description: "True if any escalation trigger fired" },
+    escalationReason: { type: ["string", "null"], description: "Which trigger fired and why" },
+    counterTerms: {
+      type: ["object", "null"],
+      properties: {
+        targetPrice: { type: "number" },
+        targetQuantity: { type: "number" },
+        otherTerms: { type: ["string", "null"] },
+      },
+      description: "Counter-offer terms if recommending counter",
+    },
+  },
+  required: ["rulesMatched", "complianceStatus", "recommendedAction", "reasoning", "escalationTriggered"],
+};
+
+export const RESPONSE_GENERATION_JSON_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    emailText: { type: "string", description: "Email body text (no subject, greeting, or signature)" },
+    proposedTermsSummary: { type: "string", description: "One-line summary of what is being proposed or asked" },
+    subjectLine: { type: "string", description: "Short professional subject line for the email" },
+  },
+  required: ["emailText"],
+};
+
 // ─── ExtractedQuoteData — mirrors PRODUCT_SPEC Section 3.11 ───────────────────
 // Field names match the spec exactly. DB-only fields (id, messageId, orderId,
 // createdAt) are omitted — they're added when persistence comes in B3.
@@ -60,6 +112,8 @@ export interface ExtractionResult {
   provider: string;
   model: string;
   latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
   retryCount: number;
 }
 
@@ -72,11 +126,14 @@ export type AgentAction = "accept" | "counter" | "escalate" | "clarify";
 export type ComplianceStatus = "compliant" | "non_compliant" | "partial";
 
 // ─── Order context (from AgentProcessRequest) ─────────────────────────────────
+export type NegotiationStyle = "ask_for_quote" | "state_price_upfront";
+
 export interface OrderContext {
   skuName: string;
   supplierSku: string;
   quantityRequested: string;
   lastKnownPrice: number;
+  negotiationStyle?: NegotiationStyle;
   specialInstructions?: string;
 }
 
@@ -118,6 +175,8 @@ export interface PolicyEvaluationResult {
   provider: string;
   model: string;
   latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 // ─── Zod schema for response generation LLM output ────────────────────────────
@@ -149,6 +208,8 @@ export interface GeneratedResponse {
   provider?: string;
   model?: string;
   latencyMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 // ─── Top-level pipeline types ─────────────────────────────────────────────────
@@ -172,5 +233,17 @@ export interface AgentProcessResponse {
     rulesMatched: string[];
     complianceStatus: ComplianceStatus;
     details: string;
+    provider?: string;
+    model?: string;
+    latencyMs?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+  };
+  responseGeneration?: {
+    provider: string;
+    model: string;
+    latencyMs: number;
+    inputTokens: number;
+    outputTokens: number;
   };
 }

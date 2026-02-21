@@ -1,8 +1,15 @@
+export interface OutputSchema {
+  name: string;
+  description: string;
+  schema: Record<string, unknown>;
+}
+
 export interface LLMRequest {
   systemPrompt: string;
   userMessage: string;
   maxTokens?: number;
   temperature?: number;
+  outputSchema?: OutputSchema;
 }
 
 export interface LLMResponse {

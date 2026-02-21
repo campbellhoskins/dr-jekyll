@@ -5,7 +5,7 @@ export { parseExtractionOutput, extractJson } from "./output-parser";
 export { normalizeCurrency, LLMExtractionOutputSchema } from "./types";
 
 // B1.5: Policy, Decision, Response, Pipeline
-export { AgentPipeline } from "./pipeline";
+export { AgentPipeline, type InitialEmailResult } from "./pipeline";
 export { PolicyEvaluator } from "./policy-evaluator";
 export { ResponseGenerator } from "./response-generator";
 export { checkPrePolicyEscalation, makeDecision } from "./decision-engine";
@@ -13,6 +13,7 @@ export {
   buildPolicyDecisionPrompt,
   buildCounterOfferPrompt,
   buildClarificationPrompt,
+  buildInitialEmailPrompt,
 } from "./prompts";
 export {
   parsePolicyDecisionOutput,
@@ -33,6 +34,7 @@ export type {
   GeneratedResponse,
   AgentProcessRequest,
   AgentProcessResponse,
+  NegotiationStyle,
 } from "./types";
 export {
   LLMPolicyDecisionOutputSchema,

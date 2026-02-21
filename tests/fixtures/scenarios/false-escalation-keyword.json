@@ -1,0 +1,15 @@
+{
+  "name": "false-escalation-keyword",
+  "description": "Supplier mentions discontinuing a DIFFERENT product but can fulfill the requested one — should NOT escalate",
+  "supplierMessage": "Hello,\n\nThank you for your inquiry about the running shoes.\n\nWe recently discontinued our cotton socks line, but we are still fully stocked on running shoes. We can offer:\n- Unit price: $18.50 USD\n- MOQ: 100 pairs\n- Lead time: 14 days\n- Payment: NET 30\n\nPlease let us know if you'd like to proceed.\n\nBest,\nSarah",
+  "negotiationRules": "Accept if price is at or below $20.00 per unit. Lead time under 21 days. NET 30 payment terms are preferred.",
+  "escalationTriggers": "Escalate if supplier mentions discontinuation of the requested product. Escalate if price exceeds $25.00.",
+  "orderContext": {
+    "skuName": "Running Shoes - Men's Size 10",
+    "supplierSku": "RS-M10",
+    "quantityRequested": "100",
+    "lastKnownPrice": 17.50
+  },
+  "expectedAction": "accept",
+  "expectedComplianceStatus": "compliant"
+}

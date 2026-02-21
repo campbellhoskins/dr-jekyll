@@ -15,19 +15,54 @@ export class ClaudeProvider implements LLMProvider {
     const start = Date.now();
 
     try {
-      const response = await this.client.messages.create({
+      // Build base params
+      const params: Record<string, unknown> = {
         model: this.model,
         max_tokens: request.maxTokens ?? 1024,
         temperature: request.temperature ?? 0,
         system: request.systemPrompt,
         messages: [{ role: "user", content: request.userMessage }],
-      });
+      };
+
+      // Add structured output (tool_use) when schema is provided
+      if (request.outputSchema) {
+        params.tools = [
+          {
+            name: request.outputSchema.name,
+            description: request.outputSchema.description,
+            input_schema: request.outputSchema.schema,
+          },
+        ];
+        params.tool_choice = {
+          type: "tool",
+          name: request.outputSchema.name,
+        };
+      }
+
+      const response = await this.client.messages.create(
+        params as Anthropic.MessageCreateParamsNonStreaming
+      );
 
       const latencyMs = Date.now() - start;
-      const textBlock = response.content.find((b) => b.type === "text");
+
+      // Extract content based on response type
+      let content: string;
+      if (request.outputSchema) {
+        // Structured output: extract from tool_use block
+        const toolBlock = response.content.find(
+          (b) => b.type === "tool_use"
+        );
+        content = toolBlock && "input" in toolBlock
+          ? JSON.stringify(toolBlock.input)
+          : "";
+      } else {
+        // Text output: extract from text block
+        const textBlock = response.content.find((b) => b.type === "text");
+        content = textBlock && "text" in textBlock ? textBlock.text : "";
+      }
 
       return {
-        content: textBlock ? textBlock.text : "",
+        content,
         provider: this.name,
         model: response.model,
         inputTokens: response.usage.input_tokens,

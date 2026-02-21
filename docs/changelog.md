@@ -9,7 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-*Nothing unreleased — all changes shipped in 0.2.0.*
+*Nothing unreleased — all changes shipped in 0.3.0.*
+
+---
+
+## [0.3.0] - 2026-02-21
+
+### Changed — Switch to Claude Structured Output (tool_use)
+
+All LLM calls now use Claude's native structured output via `tool_use` with JSON schemas. The API guarantees valid, schema-conforming JSON — eliminating JSON parse failures, truncated output, and unescaped newline issues.
+
+**LLM Provider** (`src/lib/llm/`)
+- `LLMRequest` gains optional `outputSchema` field (name, description, JSON schema)
+- `ClaudeProvider` passes `tools` + `tool_choice` to Anthropic API when schema present
+- Response extracted from `tool_use` block input, JSON.stringified for downstream consumers
+- Backward compatible: no schema = text mode (unchanged behavior)
+
+**Agent Prompts** (`src/lib/agent/prompts.ts`)
+- All 5 prompt builders now include `outputSchema`: extraction, policy evaluation, counter-offer, clarification, initial email
+- Three JSON Schema constants added to `types.ts`: `EXTRACTION_JSON_SCHEMA`, `POLICY_DECISION_JSON_SCHEMA`, `RESPONSE_GENERATION_JSON_SCHEMA`
+
+**Simplified Parsers** (`src/lib/agent/output-parser.ts`)
+- Removed `extractEmailText` regex fallback hack from response-generator
+- Coerce function handles string "null"/"N/A"/empty → null for numeric fields
+- Kept Zod validation as safety net alongside structured output
+
+**New Tests**
+- 4 new Claude provider unit tests for structured output mode
+- 5 new live integration tests (`live-structured.test.ts`) verifying tool_use works end-to-end with real API
+
+**Other**
+- Added `npm run chat` — interactive supplier conversation mode with full pipeline trace
+- Counter-offer emails no longer leak merchant's target price range (confidentiality fix)
+- `false-escalation-keyword.json` scenario fixture: tests that "discontinued" about a different product doesn't trigger false escalation
+- OpenAI fallback provider kept in codebase but not wired up for now
 
 ---
 

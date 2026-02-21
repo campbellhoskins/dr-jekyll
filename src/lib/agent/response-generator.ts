@@ -92,6 +92,8 @@ export class ResponseGenerator {
         provider: llmResult.response.provider,
         model: llmResult.response.model,
         latencyMs: llmResult.response.latencyMs,
+        inputTokens: llmResult.response.inputTokens,
+        outputTokens: llmResult.response.outputTokens,
       };
     } catch (error) {
       return {
@@ -123,6 +125,8 @@ export class ResponseGenerator {
         provider: llmResult.response.provider,
         model: llmResult.response.model,
         latencyMs: llmResult.response.latencyMs,
+        inputTokens: llmResult.response.inputTokens,
+        outputTokens: llmResult.response.outputTokens,
       };
     } catch (error) {
       return {

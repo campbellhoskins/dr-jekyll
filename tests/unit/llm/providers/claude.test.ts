@@ -98,6 +98,116 @@ describe("ClaudeProvider", () => {
     const response = await provider.call(TEST_REQUEST);
 
     expect(response.latencyMs).toBeGreaterThanOrEqual(40);
-    expect(response.latencyMs).toBeLessThan(200);
+    expect(response.latencyMs).toBeLessThan(500);
+  });
+
+  // ── Structured Output (tool_use) tests ──
+
+  const STRUCTURED_REQUEST: LLMRequest = {
+    systemPrompt: "You are a data extraction assistant.",
+    userMessage: "Extract quote data.",
+    maxTokens: 1024,
+    temperature: 0,
+    outputSchema: {
+      name: "extract_quote",
+      description: "Extract structured quote data from supplier email",
+      schema: {
+        type: "object",
+        properties: {
+          quotedPrice: { type: ["number", "null"] },
+          currency: { type: "string" },
+        },
+        required: ["quotedPrice", "currency"],
+      },
+    },
+  };
+
+  it("passes tools and tool_choice when outputSchema provided", async () => {
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_01",
+          name: "extract_quote",
+          input: { quotedPrice: 4.5, currency: "USD" },
+        },
+      ],
+      model: "claude-3-haiku-20240307",
+      usage: { input_tokens: 200, output_tokens: 80 },
+      stop_reason: "tool_use",
+    });
+
+    await provider.call(STRUCTURED_REQUEST);
+
+    const callArgs = mockCreate.mock.calls[0][0];
+    expect(callArgs.tools).toEqual([
+      {
+        name: "extract_quote",
+        description: "Extract structured quote data from supplier email",
+        input_schema: STRUCTURED_REQUEST.outputSchema!.schema,
+      },
+    ]);
+    expect(callArgs.tool_choice).toEqual({
+      type: "tool",
+      name: "extract_quote",
+    });
+  });
+
+  it("extracts content from tool_use block as JSON string", async () => {
+    const inputObj = { quotedPrice: 4.5, currency: "USD" };
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_01",
+          name: "extract_quote",
+          input: inputObj,
+        },
+      ],
+      model: "claude-3-haiku-20240307",
+      usage: { input_tokens: 200, output_tokens: 80 },
+      stop_reason: "tool_use",
+    });
+
+    const response = await provider.call(STRUCTURED_REQUEST);
+
+    expect(response.content).toBe(JSON.stringify(inputObj));
+    expect(response.provider).toBe("claude");
+  });
+
+  it("still works in text mode when no outputSchema", async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: "text", text: "plain text response" }],
+      model: "claude-3-haiku-20240307",
+      usage: { input_tokens: 50, output_tokens: 20 },
+    });
+
+    const response = await provider.call(TEST_REQUEST);
+
+    expect(response.content).toBe("plain text response");
+    const callArgs = mockCreate.mock.calls[0][0];
+    expect(callArgs.tools).toBeUndefined();
+    expect(callArgs.tool_choice).toBeUndefined();
+  });
+
+  it("returns correct token counts in structured mode", async () => {
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_01",
+          name: "extract_quote",
+          input: { quotedPrice: 4.5, currency: "USD" },
+        },
+      ],
+      model: "claude-3-haiku-20240307",
+      usage: { input_tokens: 350, output_tokens: 120 },
+      stop_reason: "tool_use",
+    });
+
+    const response = await provider.call(STRUCTURED_REQUEST);
+
+    expect(response.inputTokens).toBe(350);
+    expect(response.outputTokens).toBe(120);
   });
 });

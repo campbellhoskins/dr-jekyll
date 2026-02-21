@@ -31,6 +31,8 @@ export class PolicyEvaluator {
     let provider: string;
     let model: string;
     let latencyMs: number;
+    let inputTokens: number;
+    let outputTokens: number;
 
     try {
       const llmResult = await this.llmService.call(prompt);
@@ -38,6 +40,8 @@ export class PolicyEvaluator {
       provider = llmResult.response.provider;
       model = llmResult.response.model;
       latencyMs = llmResult.response.latencyMs;
+      inputTokens = llmResult.response.inputTokens;
+      outputTokens = llmResult.response.outputTokens;
     } catch (error) {
       return this.buildEscalationResult(
         `Policy evaluation failed: ${error instanceof Error ? error.message : String(error)}`
@@ -68,6 +72,8 @@ export class PolicyEvaluator {
       provider: provider!,
       model: model!,
       latencyMs: latencyMs!,
+      inputTokens: inputTokens!,
+      outputTokens: outputTokens!,
     };
   }
 
@@ -87,6 +93,8 @@ export class PolicyEvaluator {
       provider,
       model,
       latencyMs,
+      inputTokens: 0,
+      outputTokens: 0,
     };
   }
 }

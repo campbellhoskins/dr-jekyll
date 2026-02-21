@@ -98,6 +98,7 @@ function printVerboseResult(result: AgentProcessResponse, scenario: ScenarioFile
   console.log(`  Confidence:  ${result.extraction.confidence}`);
   console.log(`  Provider:    ${result.extraction.provider} (${result.extraction.model})`);
   console.log(`  Latency:     ${result.extraction.latencyMs}ms`);
+  console.log(`  Tokens:      ${result.extraction.inputTokens} in / ${result.extraction.outputTokens} out`);
   if (result.extractedData) {
     const d = result.extractedData;
     console.log(`  Price:       ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency} ($${d.quotedPriceUsd} USD)` : "—"}`);
@@ -118,6 +119,11 @@ function printVerboseResult(result: AgentProcessResponse, scenario: ScenarioFile
   }
 
   console.log(`\n═══ STAGE 3: POLICY EVALUATION ═══`);
+  if (result.policyEvaluation.provider) {
+    console.log(`  Provider:       ${result.policyEvaluation.provider} (${result.policyEvaluation.model})`);
+    console.log(`  Latency:        ${result.policyEvaluation.latencyMs}ms`);
+    console.log(`  Tokens:         ${result.policyEvaluation.inputTokens} in / ${result.policyEvaluation.outputTokens} out`);
+  }
   console.log(`  Rules Matched:  ${JSON.stringify(result.policyEvaluation.rulesMatched)}`);
   console.log(`  Compliance:     ${result.policyEvaluation.complianceStatus}`);
   console.log(`  Details:        ${result.policyEvaluation.details}`);
@@ -127,6 +133,13 @@ function printVerboseResult(result: AgentProcessResponse, scenario: ScenarioFile
   console.log(`  Reasoning:   ${result.reasoning}`);
 
   console.log(`\n═══ STAGE 5: RESPONSE GENERATION ═══`);
+  if (result.responseGeneration) {
+    console.log(`  Provider:    ${result.responseGeneration.provider} (${result.responseGeneration.model})`);
+    console.log(`  Latency:     ${result.responseGeneration.latencyMs}ms`);
+    console.log(`  Tokens:      ${result.responseGeneration.inputTokens} in / ${result.responseGeneration.outputTokens} out`);
+  } else {
+    console.log(`  LLM Call:    none (deterministic)`);
+  }
   if (result.proposedApproval) {
     console.log(`  Type:        Approval Proposal`);
     console.log(`  Quantity:    ${result.proposedApproval.quantity}`);

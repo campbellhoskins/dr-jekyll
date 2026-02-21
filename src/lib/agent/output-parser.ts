@@ -34,10 +34,10 @@ export function parseExtractionOutput(raw: string): ParseResult {
     };
   }
 
-  // Step 2: Parse the JSON
+  // Step 2: Parse the JSON (sanitize unescaped newlines inside strings first)
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(jsonString);
+    parsed = JSON.parse(sanitizeJsonNewlines(jsonString));
   } catch {
     return {
       success: false,
@@ -164,6 +164,55 @@ function findClosingBrace(str: string, start: number): number {
 }
 
 /**
+ * Sanitizes unescaped newlines inside JSON string values.
+ * LLMs (especially Haiku) sometimes output literal newlines inside
+ * JSON strings instead of \n escapes, which breaks JSON.parse.
+ */
+function sanitizeJsonNewlines(json: string): string {
+  // Replace literal newlines that appear inside JSON string values with \n
+  // Strategy: walk through the string, track whether we're inside a quoted string,
+  // and replace raw newlines inside strings with \n
+  let result = "";
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const char = json[i];
+
+    if (escape) {
+      result += char;
+      escape = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      result += char;
+      escape = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+
+    if (inString && (char === "\n" || char === "\r")) {
+      result += "\\n";
+      // Skip \r\n as a pair
+      if (char === "\r" && i + 1 < json.length && json[i + 1] === "\n") {
+        i++;
+      }
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result;
+}
+
+/**
  * Coerces string values that look like numbers into actual numbers,
  * and rounds integer fields since LLMs sometimes return floats.
  */
@@ -183,9 +232,17 @@ function coerceNumericStrings(
 
   for (const field of numericFields) {
     if (typeof result[field] === "string") {
-      const parsed = Number(result[field]);
-      if (!isNaN(parsed)) {
-        result[field] = parsed;
+      const str = (result[field] as string).trim();
+      if (str === "" || str.toLowerCase() === "null" || str.toLowerCase() === "n/a") {
+        result[field] = null;
+      } else {
+        const parsed = Number(str);
+        if (!isNaN(parsed)) {
+          result[field] = parsed;
+        } else {
+          // Non-numeric string for a numeric field → null
+          result[field] = null;
+        }
       }
     }
     if (integerFields.includes(field) && typeof result[field] === "number") {
@@ -216,7 +273,7 @@ export function parsePolicyDecisionOutput(
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(jsonString);
+    parsed = JSON.parse(sanitizeJsonNewlines(jsonString));
   } catch {
     return { success: false, data: null, error: `Invalid JSON: ${jsonString.substring(0, 100)}...` };
   }
@@ -253,7 +310,7 @@ export function parseResponseGenerationOutput(
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(jsonString);
+    parsed = JSON.parse(sanitizeJsonNewlines(jsonString));
   } catch {
     return { success: false, data: null, error: `Invalid JSON: ${jsonString.substring(0, 100)}...` };
   }

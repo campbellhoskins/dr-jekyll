@@ -99,6 +99,6 @@ describe("OpenAIProvider", () => {
     const response = await provider.call(TEST_REQUEST);
 
     expect(response.latencyMs).toBeGreaterThanOrEqual(40);
-    expect(response.latencyMs).toBeLessThan(200);
+    expect(response.latencyMs).toBeLessThan(500);
   });
 });

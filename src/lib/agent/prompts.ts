@@ -1,5 +1,73 @@
 import type { LLMRequest } from "../llm/types";
 import type { ExtractedQuoteData, OrderContext } from "./types";
+import {
+  EXTRACTION_JSON_SCHEMA,
+  POLICY_DECISION_JSON_SCHEMA,
+  RESPONSE_GENERATION_JSON_SCHEMA,
+} from "./types";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Initial Outbound Email Generation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const INITIAL_EMAIL_SYSTEM_PROMPT = `You are drafting a professional initial email on behalf of a merchant to a supplier to start a purchase order conversation.
+
+Write a concise, professional email that:
+- Introduces the request clearly
+- Follows the specified negotiation approach (ask for quote OR state price upfront)
+- Includes all relevant order details (product, quantity, any special requirements)
+- Maintains a warm, professional tone
+- Does NOT include a subject line, greeting, or signature (those are added separately)
+- Does NOT reveal the merchant is using AI
+
+CRITICAL CONFIDENTIALITY RULES — the email must NEVER reveal:
+- The merchant's target price range or acceptable price limits (unless the approach is "state price upfront", in which case only the proposed price is shared — not the acceptable range)
+- The merchant's negotiation strategy or internal policies
+- Any internal reasoning
+
+Return ONLY valid JSON with:
+- emailText: string — the email body text only
+- subjectLine: string — a short professional subject line`;
+
+const INITIAL_EMAIL_RESPONSE_SCHEMA = `{
+  "emailText": "string",
+  "subjectLine": "string"
+}`;
+
+export function buildInitialEmailPrompt(orderContext: OrderContext): LLMRequest {
+  const style = orderContext.negotiationStyle ?? "ask_for_quote";
+  const approach = style === "state_price_upfront"
+    ? `State your target price of $${orderContext.lastKnownPrice} per unit upfront and ask if they can match it.`
+    : `Ask the supplier for their best price and terms. Do NOT mention any target price.`;
+
+  const lines = [
+    `## Negotiation Approach`,
+    approach,
+    ``,
+    `## Order Details`,
+    `Product: ${orderContext.skuName} (${orderContext.supplierSku})`,
+    `Quantity: ${orderContext.quantityRequested}`,
+  ];
+  if (orderContext.specialInstructions) {
+    lines.push(`Special Requirements: ${orderContext.specialInstructions}`);
+  }
+
+  return {
+    systemPrompt: INITIAL_EMAIL_SYSTEM_PROMPT,
+    userMessage: lines.join("\n"),
+    maxTokens: 1024,
+    temperature: 0,
+    outputSchema: {
+      name: "generate_initial_email",
+      description: "Generate the initial outbound email to a supplier",
+      schema: RESPONSE_GENERATION_JSON_SCHEMA,
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// B1: Data Extraction Prompt
+// ═══════════════════════════════════════════════════════════════════════════════
 
 const EXTRACTION_SYSTEM_PROMPT = `You are a data extraction assistant specialized in parsing supplier emails for purchase order negotiations.
 
@@ -39,6 +107,11 @@ export function buildExtractionPrompt(emailText: string): LLMRequest {
     userMessage: `Extract structured quote data from the following supplier email:\n\n---\n${emailText}\n---`,
     maxTokens: 1024,
     temperature: 0,
+    outputSchema: {
+      name: "extract_quote",
+      description: "Extract structured quote data from a supplier email",
+      schema: EXTRACTION_JSON_SCHEMA,
+    },
   };
 }
 
@@ -125,6 +198,11 @@ ${formatOrderContext(orderContext)}`;
     userMessage,
     maxTokens: 1024,
     temperature: 0,
+    outputSchema: {
+      name: "evaluate_policy",
+      description: "Evaluate supplier quote against negotiation rules and decide action",
+      schema: POLICY_DECISION_JSON_SCHEMA,
+    },
   };
 }
 
@@ -136,10 +214,17 @@ const COUNTER_OFFER_SYSTEM_PROMPT = `You are drafting a professional counter-off
 
 Write a concise, professional email that:
 - Acknowledges the supplier's quote
-- Proposes the merchant's counter-terms clearly
+- Proposes a specific counter-price or asks for a better deal
 - Maintains a warm, professional tone
 - Does NOT include a subject line, greeting, or signature (those are added separately)
 - Does NOT reveal the merchant is using AI
+
+CRITICAL CONFIDENTIALITY RULES — the email must NEVER reveal:
+- The merchant's target price, acceptable price range, or pricing rules
+- The merchant's negotiation strategy or internal policies
+- The merchant's last known price or what they previously paid
+- Any internal reasoning about why the price is being countered
+Instead, use natural negotiation language like "We were hoping for something closer to $X" or "Given current market conditions, could you do $X?" — propose a specific number without explaining the internal logic behind it.
 
 Return ONLY valid JSON with:
 - emailText: string — the email body text only
@@ -173,6 +258,11 @@ ${formatOrderContext(orderContext)}`;
     userMessage,
     maxTokens: 2048,
     temperature: 0,
+    outputSchema: {
+      name: "generate_counter_offer",
+      description: "Generate a professional counter-offer email",
+      schema: RESPONSE_GENERATION_JSON_SCHEMA,
+    },
   };
 }
 
@@ -221,5 +311,10 @@ ${formatOrderContext(orderContext)}`;
     userMessage,
     maxTokens: 2048,
     temperature: 0,
+    outputSchema: {
+      name: "generate_clarification",
+      description: "Generate a professional clarification email",
+      schema: RESPONSE_GENERATION_JSON_SCHEMA,
+    },
   };
 }

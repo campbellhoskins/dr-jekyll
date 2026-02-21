@@ -125,7 +125,8 @@ describeOrSkip("Live extraction tests", () => {
     const result = await extractor.extract(email);
 
     expect(result.success).toBe(true);
-    // Should extract something (first item or flag multi-item)
-    expect(result.notes.length).toBeGreaterThan(0);
+    // Should extract at least the first item's price
+    expect(result.data).not.toBeNull();
+    expect(result.data!.quotedPrice).not.toBeNull();
   });
 });
