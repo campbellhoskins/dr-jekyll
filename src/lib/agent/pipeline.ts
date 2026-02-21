@@ -10,6 +10,7 @@ import type {
 import { Extractor } from "./extractor";
 import { PolicyEvaluator } from "./policy-evaluator";
 import { ResponseGenerator } from "./response-generator";
+import { InstructionClassifier } from "./instruction-classifier";
 import { buildInitialEmailPrompt } from "./prompts";
 import { parseResponseGenerationOutput } from "./output-parser";
 import type { ExtractedQuoteData as PartialQuote } from "./types";
@@ -50,12 +51,14 @@ export class AgentPipeline {
   private extractor: Extractor;
   private policyEvaluator: PolicyEvaluator;
   private responseGenerator: ResponseGenerator;
+  private instructionClassifier: InstructionClassifier;
 
   constructor(llmService: LLMService) {
     this.llmService = llmService;
     this.extractor = new Extractor(llmService);
     this.policyEvaluator = new PolicyEvaluator(llmService);
     this.responseGenerator = new ResponseGenerator(llmService);
+    this.instructionClassifier = new InstructionClassifier(llmService);
   }
 
   async generateInitialEmail(orderContext: OrderContext): Promise<InitialEmailResult> {
@@ -88,6 +91,25 @@ export class AgentPipeline {
   }
 
   async process(request: AgentProcessRequest): Promise<AgentProcessResponse> {
+    // Stage 0: Classify merchant instructions if provided as single field
+    let { negotiationRules, escalationTriggers } = request;
+    let orderContext = request.orderContext;
+
+    if (request.merchantInstructions) {
+      const classified = await this.instructionClassifier.classify(
+        request.merchantInstructions,
+        request.orderContext
+      );
+      negotiationRules = classified.negotiationRules || negotiationRules;
+      escalationTriggers = classified.escalationTriggers || escalationTriggers;
+      if (classified.specialInstructions) {
+        orderContext = {
+          ...request.orderContext,
+          specialInstructions: classified.specialInstructions,
+        };
+      }
+    }
+
     // Stage 1: Extract data from supplier email (with conversation context if available)
     const extraction = await this.extractor.extract(
       request.supplierMessage,
@@ -106,9 +128,9 @@ export class AgentPipeline {
     // Stage 3: Policy evaluation + decision (single LLM call)
     const policyResult = await this.policyEvaluator.evaluate(
       extraction.data!,
-      request.negotiationRules,
-      request.escalationTriggers,
-      request.orderContext
+      negotiationRules,
+      escalationTriggers,
+      orderContext
     );
 
     // Stage 4: Final decision (deterministic overrides)
@@ -122,7 +144,7 @@ export class AgentPipeline {
       decision.action,
       extraction.data!,
       policyResult,
-      request.orderContext,
+      orderContext,
       decision.reasoning
     );
 

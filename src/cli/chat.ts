@@ -36,6 +36,7 @@ function buildLLMService(): LLMService {
 }
 
 interface SessionConfig {
+  merchantInstructions: string;
   negotiationRules: string;
   escalationTriggers: string;
   orderContext: OrderContext;
@@ -44,8 +45,9 @@ interface SessionConfig {
 function loadScenarioConfig(filePath: string): SessionConfig {
   const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
   return {
-    negotiationRules: data.negotiationRules,
-    escalationTriggers: data.escalationTriggers,
+    merchantInstructions: data.merchantInstructions ?? "",
+    negotiationRules: data.negotiationRules ?? "",
+    escalationTriggers: data.escalationTriggers ?? "",
     orderContext: data.orderContext,
   };
 }
@@ -62,23 +64,24 @@ function promptForConfig(rl: readline.Interface): Promise<SessionConfig> {
       const supplierSku = await ask("  Supplier SKU: ");
       const qty = await ask("  Quantity requested: ");
       const lastPrice = await ask("  Last known price ($): ");
-      const instructions = await ask("  Special instructions (or empty): ");
 
       console.log("");
       const styleInput = await ask("  Negotiation style (1=ask for quote, 2=state price upfront) [1]: ");
-      const rules = await ask("  Negotiation rules (plain English):\n  > ");
-      const triggers = await ask("  Escalation triggers (plain English):\n  > ");
+      console.log("");
+      console.log("  Provide any instructions, preferences, rules, or limits.");
+      console.log("  Examples: 'I want blue shoes at $40. Don't go above $50.'");
+      const merchantInstructions = await ask("  Instructions:\n  > ");
 
       resolve({
-        negotiationRules: rules,
-        escalationTriggers: triggers,
+        merchantInstructions,
+        negotiationRules: "",
+        escalationTriggers: "",
         orderContext: {
           skuName,
           supplierSku,
           quantityRequested: qty,
           lastKnownPrice: parseFloat(lastPrice) || 0,
           negotiationStyle: styleInput === "2" ? "state_price_upfront" : "ask_for_quote",
-          specialInstructions: instructions || undefined,
         },
       });
     })();
@@ -216,10 +219,12 @@ async function main(): Promise<void> {
     sessionConfig = await promptForConfig(rl);
   }
 
-  console.log(`\n  Order: ${sessionConfig.orderContext.skuName} (${sessionConfig.orderContext.supplierSku})`);
-  console.log(`  Qty:   ${sessionConfig.orderContext.quantityRequested}`);
-  console.log(`  Style: ${sessionConfig.orderContext.negotiationStyle ?? "ask_for_quote"}`);
-  console.log(`  Rules: ${sessionConfig.negotiationRules.substring(0, 80)}${sessionConfig.negotiationRules.length > 80 ? "..." : ""}`);
+  console.log(`\n  Order:        ${sessionConfig.orderContext.skuName} (${sessionConfig.orderContext.supplierSku})`);
+  console.log(`  Qty:          ${sessionConfig.orderContext.quantityRequested}`);
+  console.log(`  Style:        ${sessionConfig.orderContext.negotiationStyle ?? "ask_for_quote"}`);
+  if (sessionConfig.merchantInstructions) {
+    console.log(`  Instructions: ${sessionConfig.merchantInstructions.substring(0, 80)}${sessionConfig.merchantInstructions.length > 80 ? "..." : ""}`);
+  }
 
   // Create conversation context to track history across turns
   const context = new ConversationContext();
@@ -273,6 +278,7 @@ async function main(): Promise<void> {
         orderContext: sessionConfig.orderContext,
         conversationHistory: context.formatForPrompt(),
         priorExtractedData: context.getMergedData(),
+        merchantInstructions: sessionConfig.merchantInstructions || undefined,
       };
 
       try {

@@ -86,6 +86,40 @@ export const RESPONSE_GENERATION_JSON_SCHEMA = {
   required: ["emailText"],
 };
 
+// ─── Instruction Classification (single user input → three internal fields) ───
+export const INSTRUCTION_CLASSIFICATION_JSON_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    negotiationRules: {
+      type: "string",
+      description: "Rules for evaluating and negotiating the quote. E.g., acceptable price ranges, preferred payment terms, quantity thresholds. If none found, use empty string.",
+    },
+    escalationTriggers: {
+      type: "string",
+      description: "Conditions that require stopping negotiation and alerting the merchant. E.g., product discontinued, price above hard limit, unacceptable terms. If none found, use empty string.",
+    },
+    specialInstructions: {
+      type: "string",
+      description: "Product specifications, preferences, or requirements to communicate to the supplier. E.g., color, size, packaging, shipping method. If none found, use empty string.",
+    },
+  },
+  required: ["negotiationRules", "escalationTriggers", "specialInstructions"],
+};
+
+export interface ClassifiedInstructions {
+  negotiationRules: string;
+  escalationTriggers: string;
+  specialInstructions: string;
+}
+
+export const LLMInstructionClassificationSchema = z.object({
+  negotiationRules: z.string(),
+  escalationTriggers: z.string(),
+  specialInstructions: z.string(),
+});
+
+export type LLMInstructionClassificationOutput = z.infer<typeof LLMInstructionClassificationSchema>;
+
 // ─── ExtractedQuoteData — mirrors PRODUCT_SPEC Section 3.11 ───────────────────
 // Field names match the spec exactly. DB-only fields (id, messageId, orderId,
 // createdAt) are omitted — they're added when persistence comes in B3.
@@ -220,6 +254,7 @@ export interface AgentProcessRequest {
   orderContext: OrderContext;
   conversationHistory?: string;   // Formatted conversation thread for LLM context
   priorExtractedData?: Partial<ExtractedQuoteData>; // Merged data from prior turns
+  merchantInstructions?: string;  // Single user input — classified into rules/triggers/instructions
 }
 
 export interface AgentProcessResponse {

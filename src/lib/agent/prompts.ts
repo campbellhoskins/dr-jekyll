@@ -4,7 +4,59 @@ import {
   EXTRACTION_JSON_SCHEMA,
   POLICY_DECISION_JSON_SCHEMA,
   RESPONSE_GENERATION_JSON_SCHEMA,
+  INSTRUCTION_CLASSIFICATION_JSON_SCHEMA,
 } from "./types";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Instruction Classification (single merchant input → rules/triggers/instructions)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const INSTRUCTION_CLASSIFICATION_SYSTEM_PROMPT = `You are classifying a merchant's free-form instructions into three categories for a purchase order negotiation system.
+
+Given a single block of text from a merchant, classify each part into:
+
+1. **negotiationRules** — How to evaluate and negotiate the supplier's quote. Anything about:
+   - Acceptable price ranges or target prices
+   - Preferred payment terms
+   - Lead time requirements
+   - Quantity preferences
+   - Volume discount expectations
+   - Any "if X then Y" logic about how to respond to quotes
+
+2. **escalationTriggers** — When to STOP negotiating and alert the merchant. Hard limits or deal-breakers:
+   - Maximum prices that should never be accepted
+   - Product discontinuation or unavailability
+   - Unacceptable terms (e.g., "if they require full prepayment, let me know")
+   - Anything the merchant wants to be personally notified about
+
+3. **specialInstructions** — Product specs, preferences, or requirements to communicate to the supplier:
+   - Colors, sizes, materials, packaging
+   - Shipping preferences
+   - Custom requirements (logo, engraving, etc.)
+   - Delivery timeline preferences
+
+Rules:
+- A single sentence can belong to multiple categories. For example "I want blue shoes at $40 max" has specialInstructions ("blue shoes") AND negotiationRules ("$40 max").
+- If a category has no relevant content, return an empty string for it.
+- Preserve the merchant's original wording as much as possible — rephrase only for clarity.
+- Do not invent rules or triggers the merchant didn't mention.`;
+
+export function buildInstructionClassificationPrompt(
+  merchantInstructions: string,
+  orderContext: OrderContext
+): LLMRequest {
+  return {
+    systemPrompt: INSTRUCTION_CLASSIFICATION_SYSTEM_PROMPT,
+    userMessage: `## Merchant's Instructions\n${merchantInstructions}\n\n## Order Context\nProduct: ${orderContext.skuName}\nQuantity: ${orderContext.quantityRequested}\nLast Known Price: $${orderContext.lastKnownPrice}`,
+    maxTokens: 1024,
+    temperature: 0,
+    outputSchema: {
+      name: "classify_instructions",
+      description: "Classify merchant instructions into negotiation rules, escalation triggers, and special instructions",
+      schema: INSTRUCTION_CLASSIFICATION_JSON_SCHEMA,
+    },
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Initial Outbound Email Generation

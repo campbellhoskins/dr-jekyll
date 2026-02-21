@@ -10,11 +10,13 @@ export { PolicyEvaluator } from "./policy-evaluator";
 export { ResponseGenerator } from "./response-generator";
 export { checkPrePolicyEscalation, makeDecision } from "./decision-engine";
 export { ConversationContext, type ConversationMessage } from "./conversation-context";
+export { InstructionClassifier } from "./instruction-classifier";
 export {
   buildPolicyDecisionPrompt,
   buildCounterOfferPrompt,
   buildClarificationPrompt,
   buildInitialEmailPrompt,
+  buildInstructionClassificationPrompt,
 } from "./prompts";
 export {
   parsePolicyDecisionOutput,
@@ -36,6 +38,7 @@ export type {
   AgentProcessRequest,
   AgentProcessResponse,
   NegotiationStyle,
+  ClassifiedInstructions,
 } from "./types";
 export {
   LLMPolicyDecisionOutputSchema,
