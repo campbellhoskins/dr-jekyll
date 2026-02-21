@@ -60,6 +60,16 @@ This project uses strict TDD:
 
 All external dependencies (Gmail API, LLM Service providers, email service) must be mocked for deterministic tests.
 
+## Design Philosophy
+
+**Accuracy over cost.** Always choose the approach that produces the most accurate, reliable results — regardless of API costs, token usage, or number of LLM calls. This applies to:
+- Extraction: re-process full conversation context every turn, never summarize or truncate for cost savings
+- Policy evaluation: include all available context, never skip data to save tokens
+- Prompts: be thorough and explicit, never shorten prompts to reduce token counts
+- Model selection: use the most capable model available, never downgrade for cost
+
+Token optimization and cost reduction are explicitly **not priorities** during development. Accuracy is the product — if the agent makes a wrong decision, the cost of that mistake far exceeds any token savings.
+
 ## Environment
 
-Copy `.env.example` to `.env.local` and fill in credentials. Use `claude-3-haiku` as the primary LLM model during development to reduce costs.
+Copy `.env.example` to `.env.local` and fill in credentials.

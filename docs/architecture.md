@@ -325,7 +325,7 @@ Provider-agnostic abstraction layer. The rest of the application sends structure
 **Capabilities:**
 - Automatic retry (2-3 attempts per provider)
 - Automatic fallback: if primary exhausts retries, routes to fallback provider
-- Rolling context window (last 10 messages + order context)
+- Full conversation context (all messages + order context, no truncation — accuracy over cost)
 - Structured output parsing (consistent format regardless of provider)
 - Full audit logging of every attempt: provider, model, prompt, response, latency, outcome
 - Escalation to merchant only after all providers are exhausted

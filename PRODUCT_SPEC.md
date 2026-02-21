@@ -70,8 +70,7 @@ The MVP replaces email back-and-forth, not purchasing strategy.
 All LLM calls go through a provider-agnostic **LLM Service** layer. Callers send a prompt with context; the service handles provider selection, retries, and fallback internally.
 
 - **Primary provider:** Claude API (Anthropic)
-  - Development: Haiku (cheaper)
-  - Production: Configurable (Haiku/Sonnet/Opus)
+  - Configurable model (Haiku/Sonnet/Opus) — always use the most capable model available; accuracy over cost
 - **Fallback provider:** OpenAI API (GPT-4o or equivalent)
   - Activated automatically when primary fails after retry attempts
 - **Retry & fallback logic:**
@@ -666,9 +665,10 @@ Immediate escalation to merchant when:
 
 ### 7.6 Context Management
 
-- **Window:** Last 10 messages plus original order context
-- **Summarization:** Not used in MVP; rely on rolling window
+- **Window:** Full conversation history — all messages included in every LLM call. No rolling window, no truncation, no summarization. Accuracy is the priority; token costs are not a constraint.
+- **Extraction:** Every turn re-processes the full conversation thread plus merged prior extraction data. The LLM sees the complete email chain to make the most accurate extraction possible.
 - **Order context includes:** SKU details, negotiation rules, escalation triggers, special instructions, merchant communication style, supplier intelligence (behavioral patterns and communication style)
+- **Design principle:** Always choose the most accurate approach regardless of API costs or token usage. Token optimization is explicitly not a priority.
 
 ### 7.7 LLM Error Handling
 

@@ -1007,7 +1007,7 @@ export function useOrders() {
 NEXT_PUBLIC_USE_MOCKS=true      # Toggle mock data
 AGENT_TEST_MODE=true            # Agent returns test responses
 
-# Development settings
+# Development settings — use most capable model available, accuracy over cost
 CLAUDE_MODEL=claude-3-haiku-20240307
 EMAIL_POLL_INTERVAL_MINUTES=60  # Slow polling in dev
 ```

@@ -9,7 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-*Nothing unreleased — all changes shipped in 0.3.0.*
+*Nothing unreleased — all changes shipped in 0.3.1.*
+
+---
+
+## [0.3.1] - 2026-02-21
+
+### Changed — Accuracy Over Cost + Conversation Context
+
+**Design philosophy established across all docs:**
+- CLAUDE.md, PRODUCT_SPEC.md, architecture.md, project_status.md all updated
+- Always choose the most accurate approach regardless of API costs or token usage
+- No rolling window, no truncation, no summarization — full conversation history in every LLM call
+- Token optimization is explicitly not a priority
+
+**Conversation context management (spec Section 7.6 rewritten):**
+- Full conversation history passed to every extraction and policy evaluation call
+- ConversationContext class tracks messages + merges extraction data across turns
+- Extraction prompt carries forward prior data ("keep quantity=500 if not contradicted")
+- Chat CLI tracks full conversation, merges per turn, passes to pipeline
 
 ---
 

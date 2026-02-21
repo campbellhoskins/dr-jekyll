@@ -107,9 +107,10 @@
 - [x] Accept → deterministic ProposedApproval (quantity, price, total, summary)
 - [x] Escalate → deterministic escalation reason passthrough
 - [x] Full AgentPipeline orchestrator (extract → check → evaluate → decide → generate)
-- [x] CLI harnesses: `npm run extract` (extraction only) + `npm run pipeline` (full pipeline)
+- [x] CLI harnesses: `npm run extract` + `npm run pipeline` + `npm run chat` (interactive)
 - [x] 9 supplier email fixtures + 7 scenario fixtures
-- [ ] Context window management (B3)
+- [x] ConversationContext — full conversation history passed to every LLM call (no truncation, accuracy over cost)
+- [x] Multi-turn extraction: merged data carries forward, re-extracts from full thread each turn
 
 ### Milestone 7: Approval Flow
 **Status:** ⬜ Not Started
@@ -172,7 +173,7 @@
 ## Technical Debt
 
 - Hardcoded USD exchange rates in `src/lib/agent/extractor.ts` (to be replaced with real API in B4)
-- Haiku escalation trigger reliability — consider upgrading to Sonnet for policy evaluation in production
+- Haiku escalation trigger reliability — upgrade to Sonnet/Opus when accuracy demands it (accuracy over cost)
 - OpenAI fallback provider kept in codebase but not wired up — re-enable when needed
 
 ---
