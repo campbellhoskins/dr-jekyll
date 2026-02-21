@@ -298,8 +298,7 @@ The policy engine evaluates supplier responses against merchant-defined rules wr
 
 **Input:**
 - Extracted quote data (price, quantity, lead time, etc.)
-- Merchant's negotiation rules (plain English, from MerchantSupplier relationship)
-- Merchant's escalation triggers (plain English, from MerchantSupplier relationship)
+- Merchant's instructions (single plain-English field, classified by LLM into negotiation rules, escalation triggers, and special instructions)
 - Supplier intelligence (behavioral patterns, negotiation tendencies, response norms)
 
 **Output:**

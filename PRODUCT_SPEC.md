@@ -177,20 +177,31 @@ SKU {
 }
 ```
 
-### 3.6 Negotiation Rules
+### 3.6 Merchant Instructions
 
-Negotiation rules are defined per merchant-supplier relationship. Each merchant sets their own rules and escalation triggers for each supplier they work with.
+Merchant instructions are defined per merchant-supplier relationship. The merchant writes a single block of plain-English text containing negotiation rules, escalation triggers, and product preferences — all in one field. The system classifies this input into internal categories (rules, triggers, special instructions) via LLM before processing.
 
 ```
-NegotiationRules {
+MerchantInstructions {
   id: UUID
   merchantSupplierId: UUID (FK → MerchantSupplier)
-  rulesText: Text (plain English rules)
-  escalationTriggersText: Text (plain English escalation triggers)
+  instructionsText: Text (plain English — rules, triggers, and preferences combined)
   createdAt: DateTime
   updatedAt: DateTime
 }
 ```
+
+**Example:**
+```
+I want green flip flop shoes at $40 each. Don't go above $50 — if they
+can't do $50 or less, let me know. If the product is discontinued,
+stop and tell me. Prefer NET 30 payment terms.
+```
+
+The system internally classifies this into:
+- **Negotiation rules:** "Target price $40. Acceptable up to $50. Prefer NET 30."
+- **Escalation triggers:** "Escalate if price exceeds $50. Escalate if product discontinued."
+- **Special instructions:** "Green flip flop shoes."
 
 ### 3.7 Order
 
@@ -381,7 +392,7 @@ AuditLog {
 1. **Sign in with Google** - Merchant authenticates via Google OAuth
 2. **Connect Gmail** - OAuth permissions for send/read Gmail access
 3. **Enter business info** - Business name + brief description + communication style (optional, e.g. "direct and concise" or "warm and relationship-focused")
-4. **Add first supplier** - Search by email or create new; configure relationship (negotiation style, SKUs, prices, MOQ, negotiation rules, escalation triggers)
+4. **Add first supplier** - Search by email or create new; configure relationship (negotiation style, SKUs, prices, MOQ, instructions)
 5. **Ready** - Merchant can create first order
 
 ### 4.2 Add Supplier Flow
@@ -399,9 +410,8 @@ AuditLog {
    - Last known price (USD)
    - MOQ
    - Unit of measure
-6. Enters negotiation rules (plain English)
-7. Enters escalation triggers (plain English)
-8. Saves supplier relationship (creates MerchantSupplier record)
+6. Enters instructions (single plain-English field — rules, triggers, and preferences combined)
+7. Saves supplier relationship (creates MerchantSupplier record)
 
 ### 4.3 Create Order Flow
 
@@ -633,10 +643,10 @@ A single merchant will use different tactics for different suppliers, and two me
 
 ### 7.3 Policy Evaluation
 
-1. Parse merchant's plain English negotiation rules (from MerchantSupplier relationship)
-2. Parse merchant's plain English escalation triggers (from MerchantSupplier relationship)
-3. Include supplier intelligence context (known patterns, tendencies) when available
-4. Compare supplier response against rules
+1. Merchant's single instructions field is classified via LLM into negotiation rules, escalation triggers, and special instructions (InstructionClassifier — runs once at pipeline start)
+2. Include supplier intelligence context (known patterns, tendencies) when available
+3. Compare supplier response against classified negotiation rules
+4. Check classified escalation triggers (checked first — any trigger fires → escalate)
 5. Generate structured evaluation:
    - Which rules match
    - Compliance status
@@ -667,7 +677,7 @@ Immediate escalation to merchant when:
 
 - **Window:** Full conversation history — all messages included in every LLM call. No rolling window, no truncation, no summarization. Accuracy is the priority; token costs are not a constraint.
 - **Extraction:** Every turn re-processes the full conversation thread plus merged prior extraction data. The LLM sees the complete email chain to make the most accurate extraction possible.
-- **Order context includes:** SKU details, negotiation rules, escalation triggers, special instructions, merchant communication style, supplier intelligence (behavioral patterns and communication style)
+- **Order context includes:** SKU details, merchant instructions (single field, internally classified into rules/triggers/instructions), merchant communication style, supplier intelligence (behavioral patterns and communication style)
 - **Design principle:** Always choose the most accurate approach regardless of API costs or token usage. Token optimization is explicitly not a priority.
 
 ### 7.7 LLM Error Handling
@@ -795,8 +805,7 @@ If supplier quotes in non-USD currency:
 - Supplier intelligence summary (read-only, system-generated — response times, negotiation tendencies, etc.)
 - Negotiation style for this relationship (view/edit)
 - Email template for this relationship (view/edit)
-- Negotiation rules for this relationship (view/edit)
-- Escalation triggers for this relationship (view/edit)
+- Instructions for this relationship (single plain-English field, view/edit)
 - SKUs list for this relationship
 
 **SKU Management:**
@@ -1178,23 +1187,25 @@ EMAIL_POLL_INTERVAL_MINUTES=10
 
 ---
 
-## Appendix A: Example Negotiation Rules
+## Appendix A: Example Merchant Instructions
+
+The merchant writes a single block of text. The system classifies it internally.
 
 ```
-Negotiation Rules:
-- Ask for discount if ordering more than 500 units
-- Target price is $3.80 per unit
-- Acceptable range is $3.50 - $4.20 per unit
-- Prefer 30-day payment terms, but NET 15 is acceptable
-- Always confirm lead time before agreeing
+I'm ordering bamboo cutting boards. Target price is $3.80 per unit,
+but I'll accept up to $4.20. Ask for a discount if ordering more than
+500 units. Prefer 30-day payment terms, but NET 15 is acceptable.
+Always confirm lead time before agreeing.
 
-Escalation Triggers:
-- If quoted price exceeds $4.20 per unit
-- If lead time exceeds 30 days
-- If MOQ is higher than 1000 units
-- If supplier requests prepayment
-- If supplier mentions any quality or specification changes
+If the price goes above $4.20, let me know. Same if lead time exceeds
+30 days, MOQ is higher than 1000, they want prepayment, or they
+mention any quality or specification changes.
 ```
+
+The system classifies this into:
+- **Rules:** Target $3.80, acceptable $3.50-$4.20, volume discount >500, prefer 30-day terms, confirm lead time
+- **Triggers:** Price >$4.20, lead time >30 days, MOQ >1000, prepayment, quality/spec changes
+- **Instructions:** Bamboo cutting boards
 
 ---
 

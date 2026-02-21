@@ -119,7 +119,7 @@ interface Supplier {
 // GET /api/suppliers/:id
 interface SupplierDetailResponse extends Supplier {
   skus: SKU[];
-  negotiationRules: NegotiationRules;
+  instructions: MerchantInstructions;
 }
 
 interface SKU {
@@ -131,10 +131,9 @@ interface SKU {
   unitOfMeasure: string;
 }
 
-interface NegotiationRules {
+interface MerchantInstructions {
   id: string;
-  rulesText: string;
-  escalationTriggersText: string;
+  instructionsText: string;  // Single plain-English field — classified by LLM internally
 }
 
 // POST /api/suppliers
@@ -143,10 +142,7 @@ interface CreateSupplierRequest {
   email: string;
   negotiationStyle: 'ask_for_quote' | 'state_price_upfront';
   skus: CreateSKURequest[];
-  negotiationRules: {
-    rulesText: string;
-    escalationTriggersText: string;
-  };
+  instructions: string;  // Single plain-English field
 }
 
 // PUT /api/suppliers/:id
@@ -312,14 +308,14 @@ interface ModifyOrderResponse {
 interface AgentProcessRequest {
   orderId?: string; // Optional - for context
   supplierMessage: string; // Simulated supplier response
-  negotiationRules: string;
-  escalationTriggers: string;
+  merchantInstructions?: string; // Single plain-English field (classified by LLM into rules/triggers/instructions)
+  negotiationRules?: string; // Internal: populated by instruction classifier
+  escalationTriggers?: string; // Internal: populated by instruction classifier
   orderContext: {
     skuName: string;
     supplierSku: string;
     quantityRequested: string;
     lastKnownPrice: number;
-    specialInstructions?: string;
   };
 }
 

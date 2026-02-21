@@ -9,7 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-*Nothing unreleased — all changes shipped in 0.3.1.*
+*Nothing unreleased — all changes shipped in 0.3.2.*
+
+---
+
+## [0.3.2] - 2026-02-21
+
+### Changed — Single Merchant Instructions Field
+
+Merchants no longer fill in three separate fields (negotiation rules, escalation triggers, special instructions). They write one plain-English block of text, and the system classifies it via LLM into the three internal categories.
+
+**Spec updates:**
+- Section 3.6: `NegotiationRules` model replaced with `MerchantInstructions` (single `instructionsText` field)
+- Section 4.2: Add Supplier flow simplified to one instructions input
+- Section 7.3: Policy evaluation now starts with instruction classification step
+- Section 7.6: Context management references updated
+- Appendix A: Example rewritten as single merchant input with classification output
+- Architecture doc: Policy engine input updated
 
 ---
 
