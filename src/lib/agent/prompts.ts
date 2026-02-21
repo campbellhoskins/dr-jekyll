@@ -98,13 +98,29 @@ Rules:
 - If the supplier did not provide a price, set quotedPrice to null and confidence low.
 - If the supplier quoted multiple items, extract the first item and note the rest in notes.
 - If tiered pricing is given, extract the first tier as quotedPrice and capture all tiers in notes.
-- Do not invent or hallucinate data. If a field is not mentioned, set it to null.
-- Currency: "RMB" = "CNY". If only "$" is used with no further context, assume "USD".`;
+- Do not invent or hallucinate data. If a field is not mentioned in the latest email, set it to null.
+- Currency: "RMB" = "CNY". If only "$" is used with no further context, assume "USD".
+- IMPORTANT: If prior conversation and previously extracted data are provided, carry forward any fields that the latest email does not contradict. For example, if a prior message established quantity=500 and the latest email only confirms a new price, keep quantity=500.`;
 
-export function buildExtractionPrompt(emailText: string): LLMRequest {
+export function buildExtractionPrompt(
+  emailText: string,
+  conversationHistory?: string,
+  priorData?: string
+): LLMRequest {
+  let userMessage = "";
+
+  if (conversationHistory) {
+    userMessage += `## Prior Conversation\n${conversationHistory}\n\n`;
+  }
+  if (priorData) {
+    userMessage += `## Previously Extracted Data (carry forward any fields not contradicted)\n${priorData}\n\n`;
+  }
+
+  userMessage += `## Latest Supplier Email (extract from this)\n---\n${emailText}\n---`;
+
   return {
     systemPrompt: EXTRACTION_SYSTEM_PROMPT,
-    userMessage: `Extract structured quote data from the following supplier email:\n\n---\n${emailText}\n---`,
+    userMessage,
     maxTokens: 1024,
     temperature: 0,
     outputSchema: {

@@ -9,6 +9,7 @@ export { AgentPipeline, type InitialEmailResult } from "./pipeline";
 export { PolicyEvaluator } from "./policy-evaluator";
 export { ResponseGenerator } from "./response-generator";
 export { checkPrePolicyEscalation, makeDecision } from "./decision-engine";
+export { ConversationContext, type ConversationMessage } from "./conversation-context";
 export {
   buildPolicyDecisionPrompt,
   buildCounterOfferPrompt,

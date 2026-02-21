@@ -12,11 +12,28 @@ import { PolicyEvaluator } from "./policy-evaluator";
 import { ResponseGenerator } from "./response-generator";
 import { buildInitialEmailPrompt } from "./prompts";
 import { parseResponseGenerationOutput } from "./output-parser";
+import type { ExtractedQuoteData as PartialQuote } from "./types";
 import {
   checkPrePolicyEscalation,
   makeDecision,
   type DecisionOutput,
 } from "./decision-engine";
+
+function formatPriorDataForPrompt(data: Partial<PartialQuote>): string {
+  const lines: string[] = [];
+  if (data.quotedPrice !== undefined && data.quotedPrice !== null) lines.push(`Price: ${data.quotedPrice} ${data.quotedPriceCurrency ?? "USD"}`);
+  if (data.availableQuantity !== undefined && data.availableQuantity !== null) lines.push(`Quantity: ${data.availableQuantity}`);
+  if (data.moq !== undefined && data.moq !== null) lines.push(`MOQ: ${data.moq}`);
+  if (data.leadTimeMinDays !== undefined && data.leadTimeMinDays !== null) {
+    const lt = data.leadTimeMaxDays && data.leadTimeMaxDays !== data.leadTimeMinDays
+      ? `${data.leadTimeMinDays}-${data.leadTimeMaxDays} days`
+      : `${data.leadTimeMinDays} days`;
+    lines.push(`Lead Time: ${lt}`);
+  }
+  if (data.paymentTerms) lines.push(`Payment: ${data.paymentTerms}`);
+  if (data.validityPeriod) lines.push(`Validity: ${data.validityPeriod}`);
+  return lines.length > 0 ? lines.join("\n") : "No prior data.";
+}
 
 export interface InitialEmailResult {
   emailText: string;
@@ -71,8 +88,14 @@ export class AgentPipeline {
   }
 
   async process(request: AgentProcessRequest): Promise<AgentProcessResponse> {
-    // Stage 1: Extract data from supplier email
-    const extraction = await this.extractor.extract(request.supplierMessage);
+    // Stage 1: Extract data from supplier email (with conversation context if available)
+    const extraction = await this.extractor.extract(
+      request.supplierMessage,
+      request.conversationHistory,
+      request.priorExtractedData
+        ? formatPriorDataForPrompt(request.priorExtractedData)
+        : undefined
+    );
 
     // Stage 2: Deterministic pre-policy checks
     const preCheck = checkPrePolicyEscalation(extraction);

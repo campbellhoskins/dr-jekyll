@@ -218,6 +218,8 @@ export interface AgentProcessRequest {
   negotiationRules: string;
   escalationTriggers: string;
   orderContext: OrderContext;
+  conversationHistory?: string;   // Formatted conversation thread for LLM context
+  priorExtractedData?: Partial<ExtractedQuoteData>; // Merged data from prior turns
 }
 
 export interface AgentProcessResponse {

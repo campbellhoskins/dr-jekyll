@@ -6,6 +6,7 @@ import { LLMService } from "../lib/llm/service";
 import { ClaudeProvider } from "../lib/llm/providers/claude";
 import { OpenAIProvider } from "../lib/llm/providers/openai";
 import { AgentPipeline } from "../lib/agent/pipeline";
+import { ConversationContext } from "../lib/agent/conversation-context";
 import type { AgentProcessRequest, AgentProcessResponse, OrderContext } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
 
@@ -220,10 +221,14 @@ async function main(): Promise<void> {
   console.log(`  Style: ${sessionConfig.orderContext.negotiationStyle ?? "ask_for_quote"}`);
   console.log(`  Rules: ${sessionConfig.negotiationRules.substring(0, 80)}${sessionConfig.negotiationRules.length > 80 ? "..." : ""}`);
 
+  // Create conversation context to track history across turns
+  const context = new ConversationContext();
+
   // Generate and display the initial outbound email
   console.log(`\n  Generating initial email to supplier...`);
   try {
     const initialEmail = await pipeline.generateInitialEmail(sessionConfig.orderContext);
+    context.addAgentMessage(initialEmail.emailText);
     console.log(`\n  ┌─ INITIAL EMAIL TO SUPPLIER ─────────────────┐`);
     console.log(`  │  Subject: ${initialEmail.subjectLine}`);
     console.log(`  │`);
@@ -258,17 +263,33 @@ async function main(): Promise<void> {
       }
 
       turn++;
-      console.log(`\nProcessing...`);
+      context.addSupplierMessage(trimmed);
+      console.log(`\nProcessing... (${context.getMessageCount()} messages in context)`);
 
       const request: AgentProcessRequest = {
         supplierMessage: trimmed,
         negotiationRules: sessionConfig.negotiationRules,
         escalationTriggers: sessionConfig.escalationTriggers,
         orderContext: sessionConfig.orderContext,
+        conversationHistory: context.formatForPrompt(),
+        priorExtractedData: context.getMergedData(),
       };
 
       try {
         const result = await pipeline.process(request);
+
+        // Merge extraction results into context for next turn
+        if (result.extractedData) {
+          context.mergeExtraction(result.extractedData);
+        }
+
+        // Track agent's response in context
+        if (result.counterOffer) {
+          context.addAgentMessage(result.counterOffer.draftEmail);
+        } else if (result.clarificationEmail) {
+          context.addAgentMessage(result.clarificationEmail);
+        }
+
         printResult(result, turn);
       } catch (err) {
         console.error(`\nPipeline error: ${err}`);

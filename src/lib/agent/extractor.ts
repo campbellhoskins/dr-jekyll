@@ -34,8 +34,12 @@ export class Extractor {
     this.llmService = llmService;
   }
 
-  async extract(emailText: string): Promise<ExtractionResult> {
-    const prompt = buildExtractionPrompt(emailText);
+  async extract(
+    emailText: string,
+    conversationHistory?: string,
+    priorData?: string
+  ): Promise<ExtractionResult> {
+    const prompt = buildExtractionPrompt(emailText, conversationHistory, priorData);
 
     let llmContent: string;
     let provider: string;
