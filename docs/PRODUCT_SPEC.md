@@ -39,47 +39,7 @@ The MVP replaces email back-and-forth, not purchasing strategy.
 
 ## 2. Technical Architecture
 
-### 2.1 Tech Stack
-
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| Frontend | Next.js (App Router) | Dashboard, merchant UI |
-| Backend | Next.js API Routes | API endpoints, webhooks |
-| Database | PostgreSQL via Prisma ORM | Data persistence |
-| Hosting (Web) | Vercel | Next.js app deployment |
-| Hosting (DB) | Neon | Serverless PostgreSQL |
-| Background Jobs (Light) | Vercel Cron | Scheduled triggers (email polling, queue reminders) |
-| Background Jobs (Heavy) | Railway Worker | Long-running agent reasoning, email generation |
-| Authentication | NextAuth.js | Google OAuth for merchant login |
-| LLM Service | Claude API (primary), OpenAI API (fallback) | Agent reasoning and email generation via provider-agnostic service |
-| Email (Supplier Comms) | Gmail API | Send/receive via merchant's Gmail |
-| Email (System Notifications) | SendGrid or Resend | Alerts, reminders to merchants |
-| Error Tracking | Sentry | Error capture and alerting |
-| Uptime Monitoring | Better Uptime or Checkly | Service availability |
-| Performance | Vercel Analytics | Metrics and logs |
-| Currency Conversion | Open Exchange Rates or ExchangeRate-API | Real-time exchange rates |
-
-### 2.2 Environment Setup
-
-- **Environments:** Production only (add staging when real users onboard)
-- **Secrets management:** Environment variables in Vercel/Railway
-- **Database:** Cloud database (Neon) from day one
-
-### 2.3 LLM Service Configuration
-
-All LLM calls go through a provider-agnostic **LLM Service** layer. Callers send a prompt with context; the service handles provider selection, retries, and fallback internally.
-
-- **Primary provider:** Claude API (Anthropic)
-  - Configurable model (Haiku/Sonnet/Opus) — always use the most capable model available; accuracy over cost
-- **Fallback provider:** OpenAI API (GPT-4o or equivalent)
-  - Activated automatically when primary fails after retry attempts
-- **Retry & fallback logic:**
-  1. Try primary provider up to 2-3 times
-  2. If all retries fail, automatically route the same prompt to the fallback provider
-  3. If fallback also fails, escalate to merchant
-  4. All attempts (primary and fallback) are logged with provider, model, latency, and outcome
-- **Context management:** Rolling window of last 10 messages plus original order context
-- **Provider abstraction:** The rest of the application never calls a specific LLM provider directly — it sends structured requests to the LLM Service, which returns structured responses regardless of which provider fulfilled the request
+See [docs/architecture.md](./architecture.md) for full tech stack, system design diagrams, component details, deployment architecture, monitoring, and security.
 
 ---
 
@@ -882,10 +842,7 @@ If supplier quotes in non-USD currency:
 
 ### 12.3 LLM Failures
 
-1. LLM Service retries primary provider (Claude) 2-3 times
-2. If primary exhausted, LLM Service falls back to secondary provider (OpenAI)
-3. If fallback also fails, escalate to merchant
-4. All failures logged with provider, model, error type, and attempt count
+See Section 7.7 (LLM Error Handling).
 
 ### 12.4 Extraction Failures
 
@@ -968,58 +925,13 @@ If supplier quotes in non-USD currency:
 
 ---
 
-## 15. Monitoring & Observability
+## 15. Monitoring, Security & Infrastructure
 
-### 15.1 Error Tracking
-
-- **Tool:** Sentry
-- **Coverage:** All unhandled exceptions, API errors, LLM Service failures (including per-provider breakdown and fallback activation rate)
-
-### 15.2 Uptime Monitoring
-
-- **Tool:** Better Uptime or Checkly
-- **Endpoints:** Main dashboard, API health check
-
-### 15.3 Performance Metrics
-
-- **Tool:** Vercel Analytics
-- **Metrics:** Page load times, API response times
-
-### 15.4 Logs
-
-- **Application logs:** Railway logs for worker, Vercel logs for web
-- **Structured logging:** JSON format for easy parsing
+See [docs/architecture.md](./architecture.md) for monitoring tools (Sentry, uptime, Vercel Analytics), security considerations (token encryption, OAuth, input validation, rate limiting), and deployment architecture.
 
 ---
 
-## 16. Security Considerations
-
-### 16.1 Data Protection
-
-- Encrypt tokens at rest (Gmail access/refresh tokens)
-- Use environment variables for all secrets
-- HTTPS only
-
-### 16.2 OAuth Security
-
-- Validate OAuth state parameter
-- Store tokens securely
-- Handle token refresh properly
-
-### 16.3 Input Validation
-
-- Validate all user inputs
-- Sanitize email content display (prevent XSS)
-- Parameterized database queries (via Prisma)
-
-### 16.4 Rate Limiting
-
-- Implement rate limiting on API endpoints
-- Respect Gmail API rate limits
-
----
-
-## 17. MVP Scope Boundaries
+## 16. MVP Scope Boundaries
 
 ### 17.1 In Scope
 
@@ -1056,7 +968,7 @@ If supplier quotes in non-USD currency:
 
 ---
 
-## 18. Success Metrics
+## 17. Success Metrics
 
 ### 18.1 Usage
 
@@ -1083,7 +995,7 @@ If supplier quotes in non-USD currency:
 
 ---
 
-## 19. Failure Modes to Monitor
+## 18. Failure Modes to Monitor
 
 1. **Agent agrees incorrectly** - Commits to terms outside policy
 2. **Supplier confusion** - Supplier doesn't understand agent emails
@@ -1092,98 +1004,6 @@ If supplier quotes in non-USD currency:
 5. **Too few escalations** - Agent taking risks
 6. **Email deliverability issues** - Emails going to spam
 7. **Parsing failures** - Can't extract data from supplier emails
-
----
-
-## 20. File Structure (Proposed)
-
-```
-po-pro/
-├── prisma/
-│   └── schema.prisma
-├── src/
-│   ├── app/                    # Next.js App Router
-│   │   ├── (auth)/            # Auth routes
-│   │   │   ├── login/
-│   │   │   └── callback/
-│   │   ├── (dashboard)/       # Protected dashboard routes
-│   │   │   ├── orders/
-│   │   │   ├── suppliers/
-│   │   │   └── settings/
-│   │   ├── api/               # API routes
-│   │   │   ├── auth/
-│   │   │   ├── orders/
-│   │   │   ├── suppliers/
-│   │   │   ├── gmail/
-│   │   │   └── webhooks/
-│   │   ├── layout.tsx
-│   │   └── page.tsx
-│   ├── components/            # React components
-│   │   ├── ui/               # Base UI components
-│   │   ├── orders/           # Order-specific components
-│   │   ├── suppliers/        # Supplier-specific components
-│   │   └── dashboard/        # Dashboard components
-│   ├── lib/                  # Shared utilities
-│   │   ├── db.ts            # Prisma client
-│   │   ├── auth.ts          # NextAuth config
-│   │   ├── gmail/           # Gmail API utilities
-│   │   ├── llm/             # LLM Service (provider-agnostic with fallback)
-│   │   ├── email/           # Email parsing & generation
-│   │   ├── policy/          # Policy evaluation engine
-│   │   ├── currency/        # Currency conversion
-│   │   └── audit/           # Audit logging
-│   ├── workers/             # Background job handlers
-│   │   ├── email-poller.ts
-│   │   ├── reminder.ts
-│   │   └── processor.ts
-│   └── types/               # TypeScript types
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── e2e/
-├── .env.example
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
----
-
-## 21. Environment Variables
-
-```
-# Database
-DATABASE_URL=
-
-# NextAuth
-NEXTAUTH_URL=
-NEXTAUTH_SECRET=
-
-# Google OAuth
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-
-# LLM Service - Primary Provider (Claude)
-ANTHROPIC_API_KEY=
-LLM_PRIMARY_MODEL=claude-3-haiku-20240307  # or claude-3-sonnet, claude-3-opus
-
-# LLM Service - Fallback Provider (OpenAI)
-OPENAI_API_KEY=
-LLM_FALLBACK_MODEL=gpt-4o  # activated when primary provider fails
-
-# Email Service (System Notifications)
-SENDGRID_API_KEY=
-NOTIFICATION_FROM_EMAIL=notifications@popro.com
-
-# Currency API
-EXCHANGE_RATE_API_KEY=
-
-# Sentry
-SENTRY_DSN=
-
-# Feature Flags
-EMAIL_POLL_INTERVAL_MINUTES=10
-```
 
 ---
 

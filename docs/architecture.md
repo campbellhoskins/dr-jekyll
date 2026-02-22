@@ -409,4 +409,26 @@ Comprehensive logging for trust and debugging:
 
 ---
 
+## Monitoring & Observability
+
+| Tool | Purpose |
+|------|---------|
+| Sentry | Error tracking — all unhandled exceptions, API errors, LLM failures (per-provider breakdown) |
+| Better Uptime or Checkly | Uptime monitoring — main dashboard, API health check |
+| Vercel Analytics | Performance metrics — page load times, API response times |
+| Railway logs + Vercel logs | Application logs — structured JSON format |
+
+---
+
+## Security Considerations
+
+- **Token encryption:** Gmail access/refresh tokens encrypted at rest
+- **Secrets management:** All secrets via environment variables (never in code)
+- **Transport:** HTTPS only
+- **OAuth security:** Validate state parameter, secure token storage, automatic refresh
+- **Input validation:** All user inputs validated; email content sanitized (XSS prevention); parameterized queries via Prisma
+- **Rate limiting:** API endpoints rate-limited; Gmail API limits respected
+
+---
+
 *Last updated: February 2026*

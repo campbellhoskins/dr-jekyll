@@ -8,13 +8,7 @@ PO Pro is an AI agent that executes purchase order conversations with suppliers 
 
 ## Tech Stack
 
-- **Framework:** Next.js 14+ (App Router)
-- **Database:** PostgreSQL via Prisma ORM (hosted on Neon)
-- **Auth:** NextAuth.js with Google OAuth
-- **LLM:** LLM Service — Claude API (primary), OpenAI API (fallback)
-- **Email:** Gmail API for supplier comms, SendGrid/Resend for system notifications
-- **Hosting:** Vercel (web) + Railway (background workers)
-- **Testing:** Jest + Playwright
+See [docs/architecture.md](./docs/architecture.md) for full tech stack, diagrams, and deployment details. Key technologies: Next.js (App Router), PostgreSQL/Prisma/Neon, Claude API (structured output via tool_use), Gmail API, Vercel + Railway, Jest.
 
 ## Commands
 
@@ -44,10 +38,11 @@ Detailed documentation is maintained in the `docs/` folder. Reference these file
 
 | Document | Purpose |
 |----------|---------|
-| [PRODUCT_SPEC.md](./PRODUCT_SPEC.md) | Complete product requirements, data models, user flows, and all implementation decisions |
-| [docs/architecture.md](./docs/architecture.md) | System design diagrams, data flow diagrams, component details, and deployment architecture |
-| [docs/changelog.md](./docs/changelog.md) | Version history and release notes following Keep a Changelog format |
-| [docs/project_status.md](./docs/project_status.md) | Current progress, milestone tracking, known issues, and next steps |
+| [docs/PRODUCT_SPEC.md](./docs/PRODUCT_SPEC.md) | What and why — product requirements, data models, user flows, business rules, scope |
+| [docs/architecture.md](./docs/architecture.md) | How — tech stack, system design diagrams, components, deployment, monitoring, security |
+| [docs/PLAN_IMPLEMENTATION.md](./docs/PLAN_IMPLEMENTATION.md) | When — implementation phases, roadmap, milestones (NOT types/interfaces — code owns those) |
+| [docs/project_status.md](./docs/project_status.md) | Current state — progress, blockers, technical debt, test counts |
+| [docs/changelog.md](./docs/changelog.md) | What changed — version history following Keep a Changelog format |
 
 **Important:** Update the files in this docs folder after major milestones using `/update-docs` slash command before making git commits.
 
