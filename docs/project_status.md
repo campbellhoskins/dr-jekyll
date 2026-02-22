@@ -25,7 +25,7 @@
 | B1.5: Decision Engine | ✅ Complete | Pre-policy checks + post-policy guardrails |
 | B1.5: Response Generation | ✅ Complete | Counter-offer/clarification emails, approval proposals |
 | B1.5: Agent Pipeline | ✅ Complete | Full orchestrator with structured output |
-| B1.5: CLI + Live Tests | ✅ Complete | 93 mocked + 21 live tests passing |
+| B1.5: CLI + Live Tests | ✅ Complete | 106 unit + 21 live tests passing |
 | B2: Data Layer | ⬜ Not Started | Prisma models, CRUD APIs |
 | Authentication | ⬜ Not Started | Google OAuth via NextAuth |
 | Gmail Integration | ⬜ Not Started | OAuth + API |
@@ -107,7 +107,7 @@
 - [x] Accept → deterministic ProposedApproval (quantity, price, total, summary)
 - [x] Escalate → deterministic escalation reason passthrough
 - [x] Full AgentPipeline orchestrator (extract → check → evaluate → decide → generate)
-- [x] CLI harnesses: `npm run extract` + `npm run pipeline` + `npm run chat` (interactive)
+- [x] CLI harnesses: `npm run extract` + `npm run pipeline` + `npm run chat` (interactive) + `npm run session` (automated)
 - [x] 9 supplier email fixtures + 7 scenario fixtures
 - [x] ConversationContext — full conversation history passed to every LLM call (no truncation, accuracy over cost)
 - [x] Multi-turn extraction: merged data carries forward, re-extracts from full thread each turn
@@ -182,7 +182,7 @@
 
 | Suite | Tests | Status | Command |
 |-------|-------|--------|---------|
-| Unit (mocked) | 93 | ✅ All passing | `npm test` |
+| Unit (mocked) | 106 | ✅ All passing | `npm test` |
 | Live integration | 21 | ✅ All passing | `npm run test:live` |
 | E2E (Playwright) | 0 | Not started | `npm run test:e2e` |
 

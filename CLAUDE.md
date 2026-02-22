@@ -15,16 +15,18 @@ See [docs/architecture.md](./docs/architecture.md) for full tech stack, diagrams
 ```bash
 # Development
 npm run dev              # Start Next.js dev server
-npm run db:push          # Push Prisma schema to database
-npm run db:studio        # Open Prisma Studio
-npm run db:generate      # Generate Prisma client
 
 # Testing (TDD is required - write tests first)
-npm test                 # Run all tests
-npm test -- --watch      # Watch mode
+npm test                 # Run all unit tests
+npm run test:watch       # Watch mode
 npm test -- path/to/test # Run single test file
-npm run test:e2e         # Run Playwright E2E tests
-npm run test:e2e:ui      # Run Playwright with UI
+npm run test:live        # Run live integration tests (requires ANTHROPIC_API_KEY)
+
+# CLI Tools (agent testing)
+npm run extract          # Extract quote data from supplier email
+npm run pipeline         # Run full pipeline on scenario fixtures
+npm run chat             # Interactive multi-turn chat session
+npm run session          # Automated session runner with expectations
 
 # Build & Deploy
 npm run build            # Production build

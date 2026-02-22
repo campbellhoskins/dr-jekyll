@@ -64,8 +64,6 @@ FRONTEND TRACK                              BACKEND TRACK
 
 ## Frontend Track
 
-## Frontend Track
-
 ### F1: Foundation
 
 **Goal:** Project setup, authentication UI, and base layout components.
@@ -300,7 +298,7 @@ src/
 
 **Status:** Fully implemented. See `B1.md` for the original implementation spec and `docs/changelog.md` (versions 0.1.0–0.3.2) for full history.
 
-**What was built:** LLM Service (Claude structured output via tool_use), data extraction, policy evaluation, decision engine, response generation, full pipeline orchestrator, ConversationContext for multi-turn memory, InstructionClassifier (single merchant input), 3 CLI harnesses (`extract`, `pipeline`, `chat`), 93 mocked + 21 live tests.
+**What was built:** LLM Service (Claude structured output via tool_use), data extraction, policy evaluation, decision engine, response generation, full pipeline orchestrator, ConversationContext for multi-turn memory, InstructionClassifier (single merchant input), 4 CLI harnesses (`extract`, `pipeline`, `chat`, `session`), 106 unit + 21 live tests.
 
 ---
 
@@ -370,7 +368,7 @@ src/
 
 **Deliverables:**
 - Order processing service (connects agent to data layer)
-- Conversation context builder (rolling window of messages)
+- Conversation context builder (full conversation history — no truncation, accuracy over cost)
 - Quote extraction storage
 - Audit logging for all agent decisions
 - Policy evaluation storage
@@ -544,11 +542,11 @@ export function useOrders() {
 ## Success Criteria by Phase
 
 ### B1: Agent Core
-- [ ] Agent extracts price, quantity, MOQ, lead time from 90%+ of test emails
-- [ ] Policy evaluation correctly identifies compliant vs non-compliant offers
-- [ ] Escalation triggers fire correctly
-- [ ] Counter-offers are professional and on-target
-- [ ] Output is always parseable JSON
+- [x] Agent extracts price, quantity, MOQ, lead time from 90%+ of test emails
+- [x] Policy evaluation correctly identifies compliant vs non-compliant offers
+- [x] Escalation triggers fire correctly
+- [x] Counter-offers are professional and on-target
+- [x] Output is always parseable JSON
 
 ### B2: Data Layer
 - [ ] All CRUD operations work correctly

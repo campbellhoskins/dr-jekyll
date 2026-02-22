@@ -173,52 +173,65 @@ Vercel Cron              Email Poller           Gmail API            Railway Wor
      │                        │                     │                      │
 ```
 
-### 3. Agent Decision Flow
+### 3. Agent Decision Flow (6-Stage Pipeline)
 
 ```
-                              Agent Processor
+                         ┌─────────────────────┐
+                    ①    │ Instruction          │  Classify merchant's plain-English
+                         │ Classifier           │  instructions into rules, triggers,
+                         │                      │  and special instructions (LLM)
+                         └──────────┬───────────┘
                                     │
                                     ▼
                          ┌─────────────────────┐
-                         │  Parse Supplier     │
-                         │  Response           │
-                         └──────────┬──────────┘
+                    ②    │ Extractor            │  Extract quote data from supplier
+                         │                      │  email: price, qty, MOQ, lead time,
+                         │                      │  payment terms, validity (LLM)
+                         └──────────┬───────────┘
                                     │
                                     ▼
                          ┌─────────────────────┐
-                         │  Extract Quote Data │
-                         │  - Price            │
-                         │  - Quantity         │
-                         │  - Lead time        │
-                         │  - MOQ              │
-                         └──────────┬──────────┘
+                    ③    │ Pre-Policy Checks    │  Deterministic: extraction failed?
+                         │ (Decision Engine)    │  Low confidence? Discontinuation
+                         │                      │  keywords? → Escalate immediately
+                         └──────────┬───────────┘
                                     │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-             Extraction      Extraction      Extraction
-               Success        Unclear         Failed
-                    │               │               │
-                    │               ▼               ▼
-                    │      Ask Supplier      Escalate to
-                    │      for Clarity        Merchant
-                    │               │
-                    ▼               │
-         ┌─────────────────────┐    │
-         │  Evaluate Against   │◄───┘
-         │  Merchant Policy    │
-         └──────────┬──────────┘
+                         Pass       │        Fail
+                    ┌───────────────┴────────────────┐
+                    │                                │
+                    ▼                                ▼
+         ┌─────────────────────┐           Escalate to Merchant
+    ④    │ Policy Evaluator    │           (skip remaining stages)
+         │                      │
+         │  LLM evaluates vs   │
+         │  rules & triggers    │
+         └──────────┬───────────┘
+                    │
+                    ▼
+         ┌─────────────────────┐
+    ⑤    │ Final Decision      │  Deterministic guardrails:
+         │ (Decision Engine)    │  check triggers, price compliance,
+         │                      │  then trust LLM recommendation
+         └──────────┬───────────┘
                     │
         ┌───────────┼───────────┬───────────────┐
         │           │           │               │
         ▼           ▼           ▼               ▼
-    Acceptable   Counter     Escalation     Unexpected
-      Offer      Needed      Triggered       Response
+     Accept     Counter     Escalate       Clarify
         │           │           │               │
         ▼           ▼           ▼               ▼
-    Pending     Generate     Notify         Immediate
-    Approval    Counter      Merchant       Escalation
-                & Send
+         ┌─────────────────────┐
+    ⑥    │ Response Generator  │
+         │                      │
+         │ Accept → Proposed   │
+         │   Approval (no LLM) │
+         │ Counter → Draft     │
+         │   email (LLM)       │
+         │ Clarify → Draft     │
+         │   email (LLM)       │
+         │ Escalate → Reason   │
+         │   passthrough       │
+         └─────────────────────┘
 ```
 
 ### 4. Approval Flow
@@ -357,6 +370,24 @@ Accumulates and maintains behavioral knowledge about suppliers across all mercha
 2. LLM analyzes the interaction and generates/updates behavioral summaries
 3. Quantitative metrics (response time, interaction count) updated incrementally
 4. Privacy: only behavioral patterns are captured, never specific pricing or volumes from other merchants
+
+### Agent Pipeline (`src/lib/agent/`)
+
+The full agent is composed of modular, independently testable components orchestrated by `AgentPipeline`:
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **AgentPipeline** | `pipeline.ts` | Orchestrator — runs the 6-stage flow, generates initial outbound emails |
+| **InstructionClassifier** | `instruction-classifier.ts` | Classifies a single merchant instructions field into negotiation rules, escalation triggers, and special instructions (LLM) |
+| **Extractor** | `extractor.ts` | Extracts structured quote data from supplier emails with currency normalization and USD conversion (LLM) |
+| **PolicyEvaluator** | `policy-evaluator.ts` | Evaluates extracted data against merchant rules and triggers (LLM) |
+| **DecisionEngine** | `decision-engine.ts` | Deterministic pre-policy checks (extraction failure, low confidence, discontinuation keywords) and post-policy guardrails (numeric trigger thresholds, price compliance) |
+| **ResponseGenerator** | `response-generator.ts` | Generates response: accept → deterministic ProposedApproval, counter/clarify → LLM-drafted email, escalate → reason passthrough |
+| **ConversationContext** | `conversation-context.ts` | Tracks full conversation history and merges extraction data across turns — no truncation, full context in every LLM call |
+| **OutputParser** | `output-parser.ts` | Parses and validates LLM JSON output with Zod schemas, handles markdown blocks, numeric string coercion, currency normalization |
+| **Prompts** | `prompts.ts` | All LLM prompt builders with system/user messages and JSON Schema definitions for structured output |
+
+**CLI Tools** (`src/cli/`): 4 harnesses for testing — `extract` (single extraction), `pipeline` (scenario fixtures), `chat` (interactive multi-turn), `session` (automated with expectations).
 
 ### Audit Logger
 
