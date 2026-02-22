@@ -9,7 +9,7 @@ import { AgentPipeline } from "../lib/agent/pipeline";
 import { ConversationContext } from "../lib/agent/conversation-context";
 import type { AgentProcessRequest, AgentProcessResponse, OrderContext } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
-import type { ExtractionAnalysis, EscalationAnalysis } from "../lib/agent/experts/types";
+import { printExpertOpinion, printOrchestratorTrace, printResponse, printTotals } from "./display";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -94,92 +94,28 @@ function printResult(result: AgentProcessResponse, turn: number): void {
   console.log(`  TURN ${turn} -- PIPELINE RESULT`);
   console.log(`${"=".repeat(60)}`);
 
-  // Expert Opinions
+  // Initial expert opinions (parallel fan-out)
   if (result.expertOpinions) {
-    for (const opinion of result.expertOpinions) {
-      console.log(`\n-- Expert: ${opinion.expertName} --`);
-      console.log(`  Provider:    ${opinion.provider} (${opinion.model})`);
-      console.log(`  Latency:     ${opinion.latencyMs}ms`);
-      console.log(`  Tokens:      ${opinion.inputTokens} in / ${opinion.outputTokens} out`);
-
-      if (opinion.analysis.type === "extraction") {
-        const a = opinion.analysis as ExtractionAnalysis;
-        console.log(`  Success:     ${a.success}`);
-        console.log(`  Confidence:  ${a.confidence}`);
-        if (a.extractedData) {
-          const d = a.extractedData;
-          console.log(`  Price:       ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency} ($${d.quotedPriceUsd} USD)` : "---"}`);
-          console.log(`  Qty:         ${d.availableQuantity ?? "---"}`);
-          console.log(`  MOQ:         ${d.moq ?? "---"}`);
-          console.log(`  Lead Time:   ${d.leadTimeMinDays !== null ? (d.leadTimeMaxDays !== null && d.leadTimeMaxDays !== d.leadTimeMinDays ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : `${d.leadTimeMinDays} days`) : "---"}`);
-          console.log(`  Payment:     ${d.paymentTerms ?? "---"}`);
-          console.log(`  Validity:    ${d.validityPeriod ?? "---"}`);
-        }
-        if (a.notes.length > 0) console.log(`  Notes:       ${JSON.stringify(a.notes)}`);
-      } else if (opinion.analysis.type === "escalation") {
-        const a = opinion.analysis as EscalationAnalysis;
-        console.log(`  Escalate:    ${a.shouldEscalate}`);
-        console.log(`  Severity:    ${a.severity}`);
-        console.log(`  Reasoning:   ${a.reasoning}`);
-      } else {
-        console.log(`  Analysis:    ${JSON.stringify(opinion.analysis)}`);
-      }
+    console.log(`\n-- PARALLEL EXPERT FAN-OUT --`);
+    for (const opinion of result.expertOpinions.slice(0, 2)) {
+      console.log(`\n  [${opinion.expertName.toUpperCase()}]`);
+      printExpertOpinion(opinion, "    ");
     }
   }
 
-  // Orchestrator
+  // Orchestrator trace — full reasoning chain
   if (result.orchestratorTrace) {
-    console.log(`\n-- Orchestrator --`);
-    console.log(`  Iterations:  ${result.orchestratorTrace.totalIterations}`);
-    console.log(`  Action:      ${result.action}`);
-    console.log(`  Reasoning:   ${result.reasoning}`);
+    console.log(`\n-- ORCHESTRATOR DECISION LOOP --`);
+    printOrchestratorTrace(result.orchestratorTrace, "  ");
   }
 
   // Response
-  console.log(`\n-- Response --`);
-  if (result.responseGeneration) {
-    console.log(`  Provider:    ${result.responseGeneration.provider} (${result.responseGeneration.model})`);
-    console.log(`  Latency:     ${result.responseGeneration.latencyMs}ms`);
-    console.log(`  Tokens:      ${result.responseGeneration.inputTokens} in / ${result.responseGeneration.outputTokens} out`);
-  } else {
-    console.log(`  LLM Call:    none (deterministic)`);
-  }
-
-  if (result.proposedApproval) {
-    console.log(`\n  +-- APPROVAL PROPOSAL --------------------+`);
-    console.log(`  |  Quantity: ${result.proposedApproval.quantity}`);
-    console.log(`  |  Price:    $${result.proposedApproval.price}`);
-    console.log(`  |  Total:    $${result.proposedApproval.total}`);
-    console.log(`  |  Summary:  ${result.proposedApproval.summary.substring(0, 80)}`);
-    console.log(`  +-------------------------------------------+`);
-  }
-  if (result.counterOffer) {
-    console.log(`\n  +-- COUNTER-OFFER EMAIL ---------------------+`);
-    result.counterOffer.draftEmail.split("\n").forEach((line) => {
-      console.log(`  |  ${line}`);
-    });
-    console.log(`  |`);
-    console.log(`  |  Terms: ${result.counterOffer.proposedTerms}`);
-    console.log(`  +----------------------------------------------+`);
-  }
-  if (result.clarificationEmail) {
-    console.log(`\n  +-- CLARIFICATION EMAIL ----------------------+`);
-    result.clarificationEmail.split("\n").forEach((line) => {
-      console.log(`  |  ${line}`);
-    });
-    console.log(`  +----------------------------------------------+`);
-  }
-  if (result.escalationReason) {
-    console.log(`\n  +-- ESCALATION --------------------------------+`);
-    console.log(`  |  ${result.escalationReason}`);
-    console.log(`  +----------------------------------------------+`);
-  }
+  console.log(`\n-- RESPONSE CRAFTER --`);
+  printResponse(result);
 
   // Totals
   console.log(`\n-- Totals --`);
-  console.log(`  LLM Calls:   ${result.totalLLMCalls ?? "N/A"}`);
-  console.log(`  Tokens:      ${result.totalInputTokens ?? 0} in / ${result.totalOutputTokens ?? 0} out (${(result.totalInputTokens ?? 0) + (result.totalOutputTokens ?? 0)} total)`);
-  console.log(`  Latency:     ${result.totalLatencyMs ?? 0}ms`);
+  printTotals(result);
   console.log(`${"=".repeat(60)}\n`);
 }
 

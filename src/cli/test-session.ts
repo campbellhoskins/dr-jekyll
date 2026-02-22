@@ -18,7 +18,7 @@ import { AgentPipeline } from "../lib/agent/pipeline";
 import { ConversationContext } from "../lib/agent/conversation-context";
 import type { AgentProcessRequest, AgentProcessResponse, OrderContext } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
-import type { ExtractionAnalysis, EscalationAnalysis } from "../lib/agent/experts/types";
+import { printExpertOpinion, printOrchestratorTrace, printResponse, printTotals } from "./display";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -51,62 +51,28 @@ function printTurn(turn: number, supplierMsg: string, result: AgentProcessRespon
   console.log(`${"---".repeat(20)}`);
   console.log(`\nSupplier said: "${supplierMsg}"`);
 
-  // Expert Opinions
+  // Initial expert opinions (parallel fan-out)
   if (result.expertOpinions) {
-    for (const opinion of result.expertOpinions) {
-      console.log(`\n  Expert: ${opinion.expertName}`);
-
-      if (opinion.analysis.type === "extraction") {
-        const a = opinion.analysis as ExtractionAnalysis;
-        if (a.extractedData) {
-          const d = a.extractedData;
-          console.log(`    Price:       ${d.quotedPrice !== null ? `$${d.quotedPrice} ${d.quotedPriceCurrency}` : "---"}`);
-          console.log(`    Qty:         ${d.availableQuantity ?? "---"}`);
-          console.log(`    MOQ:         ${d.moq ?? "---"}`);
-          console.log(`    Lead Time:   ${d.leadTimeMinDays !== null ? (d.leadTimeMaxDays && d.leadTimeMaxDays !== d.leadTimeMinDays ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : `${d.leadTimeMinDays} days`) : "---"}`);
-          console.log(`    Payment:     ${d.paymentTerms ?? "---"}`);
-        }
-        console.log(`    Confidence:  ${a.confidence}`);
-        if (a.notes.length > 0) console.log(`    Notes:       ${JSON.stringify(a.notes)}`);
-        console.log(`    Tokens:      ${opinion.inputTokens} in / ${opinion.outputTokens} out`);
-      } else if (opinion.analysis.type === "escalation") {
-        const a = opinion.analysis as EscalationAnalysis;
-        console.log(`    Escalate:    ${a.shouldEscalate}`);
-        console.log(`    Reasoning:   ${a.reasoning.substring(0, 200)}`);
-      } else {
-        console.log(`    Analysis:    ${JSON.stringify(opinion.analysis)}`);
-      }
+    console.log(`\n  -- PARALLEL EXPERT FAN-OUT --`);
+    for (const opinion of result.expertOpinions.slice(0, 2)) {
+      console.log(`\n  [${opinion.expertName.toUpperCase()}]`);
+      printExpertOpinion(opinion, "    ");
     }
   }
 
-  // Orchestrator
+  // Orchestrator trace — full reasoning chain
   if (result.orchestratorTrace) {
-    console.log(`\n  Orchestrator: ${result.orchestratorTrace.totalIterations} iteration(s)`);
+    console.log(`\n  -- ORCHESTRATOR DECISION LOOP --`);
+    printOrchestratorTrace(result.orchestratorTrace, "  ");
   }
-
-  // Decision
-  console.log(`\n  Decision: ${result.action.toUpperCase()}`);
-  console.log(`    Reasoning:   ${result.reasoning.substring(0, 200)}`);
 
   // Response
-  if (result.proposedApproval) {
-    console.log(`\n  -> ACCEPT: ${result.proposedApproval.quantity} units @ $${result.proposedApproval.price} = $${result.proposedApproval.total}`);
-  }
-  if (result.counterOffer) {
-    console.log(`\n  -> COUNTER EMAIL:`);
-    console.log(`    ${result.counterOffer.draftEmail.split("\n").join("\n    ")}`);
-    console.log(`    Terms: ${result.counterOffer.proposedTerms}`);
-  }
-  if (result.clarificationEmail) {
-    console.log(`\n  -> CLARIFICATION EMAIL:`);
-    console.log(`    ${result.clarificationEmail.split("\n").join("\n    ")}`);
-  }
-  if (result.escalationReason) {
-    console.log(`\n  -> ESCALATED: ${result.escalationReason}`);
-  }
+  console.log(`\n  -- RESPONSE CRAFTER --`);
+  printResponse(result);
 
-  if (verbose && result.totalLLMCalls) {
-    console.log(`\n  LLM Calls: ${result.totalLLMCalls}, Tokens: ${result.totalInputTokens} in / ${result.totalOutputTokens} out`);
+  if (verbose) {
+    console.log(`\n  -- Totals --`);
+    printTotals(result);
   }
 }
 
