@@ -283,4 +283,11 @@ export interface AgentProcessResponse {
     inputTokens: number;
     outputTokens: number;
   };
+  // New fields for multi-agent orchestration observability
+  expertOpinions?: import("./experts/types").ExpertOpinion[];
+  orchestratorTrace?: import("./experts/types").OrchestratorTrace;
+  totalLLMCalls?: number;
+  totalLatencyMs?: number;
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
 }

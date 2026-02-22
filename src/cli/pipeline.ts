@@ -7,6 +7,7 @@ import { OpenAIProvider } from "../lib/llm/providers/openai";
 import { AgentPipeline } from "../lib/agent/pipeline";
 import type { AgentProcessRequest, AgentProcessResponse } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
+import type { ExtractionAnalysis, EscalationAnalysis } from "../lib/agent/experts/types";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -68,7 +69,7 @@ function printResult(result: AgentProcessResponse, scenario: ScenarioFile): void
 
   if (result.extractedData) {
     const d = result.extractedData;
-    console.log(`  Quoted Price:      ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency}` : "—"}`);
+    console.log(`  Quoted Price:      ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency}` : "---"}`);
   }
 
   if (result.proposedApproval) {
@@ -91,48 +92,64 @@ function printResult(result: AgentProcessResponse, scenario: ScenarioFile): void
 }
 
 function printVerboseResult(result: AgentProcessResponse, scenario: ScenarioFile): void {
-  console.log(`\n${"═".repeat(60)}`);
+  console.log(`\n${"=".repeat(60)}`);
 
-  console.log(`\n═══ STAGE 1: EXTRACTION ═══`);
-  console.log(`  Success:     ${result.extraction.success}`);
-  console.log(`  Confidence:  ${result.extraction.confidence}`);
-  console.log(`  Provider:    ${result.extraction.provider} (${result.extraction.model})`);
-  console.log(`  Latency:     ${result.extraction.latencyMs}ms`);
-  console.log(`  Tokens:      ${result.extraction.inputTokens} in / ${result.extraction.outputTokens} out`);
-  if (result.extractedData) {
-    const d = result.extractedData;
-    console.log(`  Price:       ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency} ($${d.quotedPriceUsd} USD)` : "—"}`);
-    console.log(`  MOQ:         ${d.moq ?? "—"}`);
-    console.log(`  Lead Time:   ${d.leadTimeMinDays !== null ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : "—"}`);
-    console.log(`  Payment:     ${d.paymentTerms ?? "—"}`);
+  // Expert Opinions
+  if (result.expertOpinions) {
+    for (const opinion of result.expertOpinions) {
+      console.log(`\n=== EXPERT: ${opinion.expertName.toUpperCase()} ===`);
+      console.log(`  Provider:    ${opinion.provider} (${opinion.model})`);
+      console.log(`  Latency:     ${opinion.latencyMs}ms`);
+      console.log(`  Tokens:      ${opinion.inputTokens} in / ${opinion.outputTokens} out`);
+
+      if (opinion.analysis.type === "extraction") {
+        const a = opinion.analysis as ExtractionAnalysis;
+        console.log(`  Success:     ${a.success}`);
+        console.log(`  Confidence:  ${a.confidence}`);
+        if (a.extractedData) {
+          const d = a.extractedData;
+          console.log(`  Price:       ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency} ($${d.quotedPriceUsd} USD)` : "---"}`);
+          console.log(`  MOQ:         ${d.moq ?? "---"}`);
+          console.log(`  Lead Time:   ${d.leadTimeMinDays !== null ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : "---"}`);
+          console.log(`  Payment:     ${d.paymentTerms ?? "---"}`);
+        }
+        if (a.notes.length > 0) {
+          console.log(`  Notes:       ${JSON.stringify(a.notes)}`);
+        }
+        if (a.error) {
+          console.log(`  Error:       ${a.error}`);
+        }
+      } else if (opinion.analysis.type === "escalation") {
+        const a = opinion.analysis as EscalationAnalysis;
+        console.log(`  Escalate:    ${a.shouldEscalate}`);
+        console.log(`  Severity:    ${a.severity}`);
+        console.log(`  Reasoning:   ${a.reasoning}`);
+        if (a.triggeredTriggers.length > 0) {
+          console.log(`  Triggered:   ${JSON.stringify(a.triggeredTriggers)}`);
+        }
+      } else {
+        console.log(`  Analysis:    ${JSON.stringify(opinion.analysis)}`);
+      }
+    }
   }
-  if (result.extraction.notes.length > 0) {
-    console.log(`  Notes:       ${JSON.stringify(result.extraction.notes)}`);
+
+  // Orchestrator Trace
+  if (result.orchestratorTrace) {
+    console.log(`\n=== ORCHESTRATOR ===`);
+    console.log(`  Iterations:  ${result.orchestratorTrace.totalIterations}`);
+    for (let i = 0; i < result.orchestratorTrace.iterations.length; i++) {
+      const iter = result.orchestratorTrace.iterations[i];
+      console.log(`  [${i + 1}] Ready: ${iter.decision.readyToAct}, Action: ${iter.decision.action}`);
+      if (iter.reConsultedExpert) {
+        console.log(`      Re-consulted: ${iter.reConsultedExpert}`);
+      }
+    }
+    console.log(`  Final:       ${result.orchestratorTrace.finalDecision.action}`);
+    console.log(`  Reasoning:   ${result.orchestratorTrace.finalDecision.reasoning}`);
   }
 
-  console.log(`\n═══ STAGE 2: PRE-POLICY CHECKS ═══`);
-  if (result.action === "escalate" && result.policyEvaluation.details === "Escalated before policy evaluation") {
-    console.log(`  Result:      ESCALATED (skipped policy evaluation)`);
-    console.log(`  Reason:      ${result.escalationReason}`);
-  } else {
-    console.log(`  Result:      PASSED (proceeding to policy evaluation)`);
-  }
-
-  console.log(`\n═══ STAGE 3: POLICY EVALUATION ═══`);
-  if (result.policyEvaluation.provider) {
-    console.log(`  Provider:       ${result.policyEvaluation.provider} (${result.policyEvaluation.model})`);
-    console.log(`  Latency:        ${result.policyEvaluation.latencyMs}ms`);
-    console.log(`  Tokens:         ${result.policyEvaluation.inputTokens} in / ${result.policyEvaluation.outputTokens} out`);
-  }
-  console.log(`  Rules Matched:  ${JSON.stringify(result.policyEvaluation.rulesMatched)}`);
-  console.log(`  Compliance:     ${result.policyEvaluation.complianceStatus}`);
-  console.log(`  Details:        ${result.policyEvaluation.details}`);
-
-  console.log(`\n═══ STAGE 4: DECISION ═══`);
-  console.log(`  Action:      ${result.action}`);
-  console.log(`  Reasoning:   ${result.reasoning}`);
-
-  console.log(`\n═══ STAGE 5: RESPONSE GENERATION ═══`);
+  // Response
+  console.log(`\n=== RESPONSE ===`);
   if (result.responseGeneration) {
     console.log(`  Provider:    ${result.responseGeneration.provider} (${result.responseGeneration.model})`);
     console.log(`  Latency:     ${result.responseGeneration.latencyMs}ms`);
@@ -157,9 +174,15 @@ function printVerboseResult(result: AgentProcessResponse, scenario: ScenarioFile
     console.log(`  Reason:      ${result.escalationReason}`);
   }
 
-  console.log(`\n═══ FINAL RESULT ═══`);
+  // Totals
+  console.log(`\n=== TOTALS ===`);
+  console.log(`  LLM Calls:   ${result.totalLLMCalls ?? "N/A"}`);
+  console.log(`  Tokens:      ${result.totalInputTokens ?? 0} in / ${result.totalOutputTokens ?? 0} out (${(result.totalInputTokens ?? 0) + (result.totalOutputTokens ?? 0)} total)`);
+  console.log(`  Latency:     ${result.totalLatencyMs ?? 0}ms`);
+
+  console.log(`\n=== FINAL RESULT ===`);
   printResult(result, scenario);
-  console.log(`${"═".repeat(60)}`);
+  console.log(`${"=".repeat(60)}`);
 }
 
 async function main(): Promise<void> {

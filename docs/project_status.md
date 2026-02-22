@@ -21,11 +21,9 @@
 | Project Setup | ✅ Complete | Next.js 16, TypeScript, Jest, Zod |
 | B1: LLM Service | ✅ Complete | Claude structured output (tool_use), no fallback wired |
 | B1: Data Extraction | ✅ Complete | 9 live extraction tests passing |
-| B1.5: Policy Evaluation | ✅ Complete | LLM-based rule compliance check |
-| B1.5: Decision Engine | ✅ Complete | Pre-policy checks + post-policy guardrails |
-| B1.5: Response Generation | ✅ Complete | Counter-offer/clarification emails, approval proposals |
-| B1.5: Agent Pipeline | ✅ Complete | Full orchestrator with structured output |
-| B1.5: CLI + Live Tests | ✅ Complete | 106 unit + 21 live tests passing |
+| B1.5: Multi-Agent Orchestration | ✅ Complete | Extraction, Escalation, Needs experts + Orchestrator + Response Crafter |
+| B1.5: Agent Pipeline | ✅ Complete | Full multi-agent orchestration with structured output |
+| B1.5: CLI + Live Tests | ✅ Complete | 110 unit + 21 live tests passing |
 | B2: Data Layer | ⬜ Not Started | Prisma models, CRUD APIs |
 | Authentication | ⬜ Not Started | Google OAuth via NextAuth |
 | Gmail Integration | ⬜ Not Started | OAuth + API |
@@ -100,13 +98,12 @@
 - [x] Output parser (handles messy LLM output, markdown blocks, numeric strings)
 - [x] Extraction prompts (all spec fields)
 - [x] Hardcoded USD currency conversion (real API in B4)
-- [x] Policy evaluation engine — LLM evaluates extracted data against plain-English rules
-- [x] Decision engine — deterministic pre-policy checks + post-policy guardrails
-- [x] Counter-offer email generation — LLM drafts professional counter-offers
-- [x] Clarification email generation — LLM drafts clarification requests
+- [x] Multi-agent orchestration — ExtractionExpert, EscalationExpert, NeedsExpert run in parallel, Orchestrator LLM synthesizes decisions
+- [x] Counter-offer email generation — ResponseCrafter drafts professional counter-offers (LLM)
+- [x] Clarification email generation — ResponseCrafter drafts clarification requests with NeedsExpert guidance (LLM)
 - [x] Accept → deterministic ProposedApproval (quantity, price, total, summary)
-- [x] Escalate → deterministic escalation reason passthrough
-- [x] Full AgentPipeline orchestrator (extract → check → evaluate → decide → generate)
+- [x] Escalate → escalation reason passthrough
+- [x] Full AgentPipeline orchestrator (classify → parallel experts → orchestrator loop → response craft)
 - [x] CLI harnesses: `npm run extract` + `npm run pipeline` + `npm run chat` (interactive) + `npm run session` (automated)
 - [x] 9 supplier email fixtures + 7 scenario fixtures
 - [x] ConversationContext — full conversation history passed to every LLM call (no truncation, accuracy over cost)
@@ -158,7 +155,7 @@
 
 ## Known Issues & Blockers
 
-- **Haiku unreliable on MOQ escalation triggers** — Haiku sometimes ignores escalation triggers when the overall deal looks good (e.g., low price but high MOQ). The deterministic decision engine catches this when the LLM correctly sets `escalationTriggered=true`, but Haiku doesn't always do so. A stronger model (Sonnet/Opus) is more reliable for production.
+- **Haiku unreliable on MOQ escalation triggers** — Haiku sometimes ignores escalation triggers when the overall deal looks good (e.g., low price but high MOQ). The multi-agent orchestration system uses a dedicated EscalationExpert with a focused prompt to improve trigger detection, but a stronger model (Sonnet/Opus) is more reliable for production.
 
 ---
 
@@ -173,7 +170,7 @@
 ## Technical Debt
 
 - Hardcoded USD exchange rates in `src/lib/agent/extractor.ts` (to be replaced with real API in B4)
-- Haiku escalation trigger reliability — upgrade to Sonnet/Opus when accuracy demands it (accuracy over cost)
+- Haiku escalation trigger reliability — dedicated EscalationExpert improves detection, but upgrade to Sonnet/Opus for production (accuracy over cost)
 - OpenAI fallback provider kept in codebase but not wired up — re-enable when needed
 
 ---
@@ -182,7 +179,7 @@
 
 | Suite | Tests | Status | Command |
 |-------|-------|--------|---------|
-| Unit (mocked) | 106 | ✅ All passing | `npm test` |
+| Unit (mocked) | 110 | ✅ All passing | `npm test` |
 | Live integration | 21 | ✅ All passing | `npm run test:live` |
 | E2E (Playwright) | 0 | Not started | `npm run test:e2e` |
 

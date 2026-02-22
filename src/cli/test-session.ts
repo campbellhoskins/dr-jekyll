@@ -18,6 +18,7 @@ import { AgentPipeline } from "../lib/agent/pipeline";
 import { ConversationContext } from "../lib/agent/conversation-context";
 import type { AgentProcessRequest, AgentProcessResponse, OrderContext } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
+import type { ExtractionAnalysis, EscalationAnalysis } from "../lib/agent/experts/types";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -45,33 +46,42 @@ function buildLLMService(): LLMService {
 }
 
 function printTurn(turn: number, supplierMsg: string, result: AgentProcessResponse, verbose: boolean): void {
-  console.log(`\n${"─".repeat(60)}`);
+  console.log(`\n${"---".repeat(20)}`);
   console.log(`TURN ${turn}`);
-  console.log(`${"─".repeat(60)}`);
+  console.log(`${"---".repeat(20)}`);
   console.log(`\nSupplier said: "${supplierMsg}"`);
 
-  // Extraction
-  console.log(`\n  Extraction:`);
-  if (result.extractedData) {
-    const d = result.extractedData;
-    console.log(`    Price:       ${d.quotedPrice !== null ? `$${d.quotedPrice} ${d.quotedPriceCurrency}` : "—"}`);
-    console.log(`    Qty:         ${d.availableQuantity ?? "—"}`);
-    console.log(`    MOQ:         ${d.moq ?? "—"}`);
-    console.log(`    Lead Time:   ${d.leadTimeMinDays !== null ? (d.leadTimeMaxDays && d.leadTimeMaxDays !== d.leadTimeMinDays ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : `${d.leadTimeMinDays} days`) : "—"}`);
-    console.log(`    Payment:     ${d.paymentTerms ?? "—"}`);
-  }
-  console.log(`    Confidence:  ${result.extraction.confidence}`);
-  if (result.extraction.notes.length > 0) {
-    console.log(`    Notes:       ${JSON.stringify(result.extraction.notes)}`);
-  }
-  console.log(`    Tokens:      ${result.extraction.inputTokens} in / ${result.extraction.outputTokens} out`);
+  // Expert Opinions
+  if (result.expertOpinions) {
+    for (const opinion of result.expertOpinions) {
+      console.log(`\n  Expert: ${opinion.expertName}`);
 
-  // Policy
-  console.log(`\n  Policy Evaluation:`);
-  console.log(`    Compliance:  ${result.policyEvaluation.complianceStatus}`);
-  console.log(`    Details:     ${result.policyEvaluation.details.substring(0, 200)}`);
-  if (result.policyEvaluation.provider) {
-    console.log(`    Tokens:      ${result.policyEvaluation.inputTokens} in / ${result.policyEvaluation.outputTokens} out`);
+      if (opinion.analysis.type === "extraction") {
+        const a = opinion.analysis as ExtractionAnalysis;
+        if (a.extractedData) {
+          const d = a.extractedData;
+          console.log(`    Price:       ${d.quotedPrice !== null ? `$${d.quotedPrice} ${d.quotedPriceCurrency}` : "---"}`);
+          console.log(`    Qty:         ${d.availableQuantity ?? "---"}`);
+          console.log(`    MOQ:         ${d.moq ?? "---"}`);
+          console.log(`    Lead Time:   ${d.leadTimeMinDays !== null ? (d.leadTimeMaxDays && d.leadTimeMaxDays !== d.leadTimeMinDays ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : `${d.leadTimeMinDays} days`) : "---"}`);
+          console.log(`    Payment:     ${d.paymentTerms ?? "---"}`);
+        }
+        console.log(`    Confidence:  ${a.confidence}`);
+        if (a.notes.length > 0) console.log(`    Notes:       ${JSON.stringify(a.notes)}`);
+        console.log(`    Tokens:      ${opinion.inputTokens} in / ${opinion.outputTokens} out`);
+      } else if (opinion.analysis.type === "escalation") {
+        const a = opinion.analysis as EscalationAnalysis;
+        console.log(`    Escalate:    ${a.shouldEscalate}`);
+        console.log(`    Reasoning:   ${a.reasoning.substring(0, 200)}`);
+      } else {
+        console.log(`    Analysis:    ${JSON.stringify(opinion.analysis)}`);
+      }
+    }
+  }
+
+  // Orchestrator
+  if (result.orchestratorTrace) {
+    console.log(`\n  Orchestrator: ${result.orchestratorTrace.totalIterations} iteration(s)`);
   }
 
   // Decision
@@ -80,23 +90,23 @@ function printTurn(turn: number, supplierMsg: string, result: AgentProcessRespon
 
   // Response
   if (result.proposedApproval) {
-    console.log(`\n  → ACCEPT: ${result.proposedApproval.quantity} units @ $${result.proposedApproval.price} = $${result.proposedApproval.total}`);
+    console.log(`\n  -> ACCEPT: ${result.proposedApproval.quantity} units @ $${result.proposedApproval.price} = $${result.proposedApproval.total}`);
   }
   if (result.counterOffer) {
-    console.log(`\n  → COUNTER EMAIL:`);
+    console.log(`\n  -> COUNTER EMAIL:`);
     console.log(`    ${result.counterOffer.draftEmail.split("\n").join("\n    ")}`);
     console.log(`    Terms: ${result.counterOffer.proposedTerms}`);
   }
   if (result.clarificationEmail) {
-    console.log(`\n  → CLARIFICATION EMAIL:`);
+    console.log(`\n  -> CLARIFICATION EMAIL:`);
     console.log(`    ${result.clarificationEmail.split("\n").join("\n    ")}`);
   }
   if (result.escalationReason) {
-    console.log(`\n  → ESCALATED: ${result.escalationReason}`);
+    console.log(`\n  -> ESCALATED: ${result.escalationReason}`);
   }
 
-  if (verbose && result.responseGeneration) {
-    console.log(`\n  Response Gen Tokens: ${result.responseGeneration.inputTokens} in / ${result.responseGeneration.outputTokens} out`);
+  if (verbose && result.totalLLMCalls) {
+    console.log(`\n  LLM Calls: ${result.totalLLMCalls}, Tokens: ${result.totalInputTokens} in / ${result.totalOutputTokens} out`);
   }
 }
 
@@ -141,10 +151,10 @@ async function main(): Promise<void> {
     fs.readFileSync(path.resolve(process.cwd(), sessionPath), "utf8")
   );
 
-  console.log(`\n${"═".repeat(60)}`);
+  console.log(`\n${"=".repeat(60)}`);
   console.log(`SESSION: ${session.name}`);
   console.log(`${session.description}`);
-  console.log(`${"═".repeat(60)}`);
+  console.log(`${"=".repeat(60)}`);
   console.log(`\nOrder: ${session.orderContext.skuName} (${session.orderContext.supplierSku})`);
   console.log(`Qty: ${session.orderContext.quantityRequested}`);
   console.log(`Rules: ${session.negotiationRules || "(none)"}`);
@@ -199,21 +209,21 @@ async function main(): Promise<void> {
     // Check expectations
     const check = checkExpectation(i + 1, result, session.expectations);
     if (check) {
-      const icon = check.pass ? "✓" : "✗";
+      const icon = check.pass ? "[PASS]" : "[FAIL]";
       console.log(`\n  ${icon} Expectation: ${check.message}`);
       if (!check.pass) allPassed = false;
     }
   }
 
   // Summary
-  console.log(`\n${"═".repeat(60)}`);
+  console.log(`\n${"=".repeat(60)}`);
   console.log(`MERGED DATA AFTER ALL TURNS:`);
   console.log(context.formatMergedDataForPrompt());
   console.log(`\nTotal messages in context: ${context.getMessageCount()}`);
   if (session.expectations) {
-    console.log(`\nExpectations: ${allPassed ? "ALL PASSED ✓" : "SOME FAILED ✗"}`);
+    console.log(`\nExpectations: ${allPassed ? "ALL PASSED" : "SOME FAILED"}`);
   }
-  console.log(`${"═".repeat(60)}`);
+  console.log(`${"=".repeat(60)}`);
 }
 
 main().catch(e => { console.error("Fatal:", e); process.exit(1); });

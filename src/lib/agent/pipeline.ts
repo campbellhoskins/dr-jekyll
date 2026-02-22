@@ -5,36 +5,17 @@ import type {
   ComplianceStatus,
   ExtractionResult,
   OrderContext,
-  PolicyEvaluationResult,
 } from "./types";
-import { Extractor } from "./extractor";
-import { PolicyEvaluator } from "./policy-evaluator";
-import { ResponseGenerator } from "./response-generator";
 import { InstructionClassifier } from "./instruction-classifier";
 import { buildInitialEmailPrompt } from "./prompts";
 import { parseResponseGenerationOutput } from "./output-parser";
-import type { ExtractedQuoteData as PartialQuote } from "./types";
-import {
-  checkPrePolicyEscalation,
-  makeDecision,
-  type DecisionOutput,
-} from "./decision-engine";
-
-function formatPriorDataForPrompt(data: Partial<PartialQuote>): string {
-  const lines: string[] = [];
-  if (data.quotedPrice !== undefined && data.quotedPrice !== null) lines.push(`Price: ${data.quotedPrice} ${data.quotedPriceCurrency ?? "USD"}`);
-  if (data.availableQuantity !== undefined && data.availableQuantity !== null) lines.push(`Quantity: ${data.availableQuantity}`);
-  if (data.moq !== undefined && data.moq !== null) lines.push(`MOQ: ${data.moq}`);
-  if (data.leadTimeMinDays !== undefined && data.leadTimeMinDays !== null) {
-    const lt = data.leadTimeMaxDays && data.leadTimeMaxDays !== data.leadTimeMinDays
-      ? `${data.leadTimeMinDays}-${data.leadTimeMaxDays} days`
-      : `${data.leadTimeMinDays} days`;
-    lines.push(`Lead Time: ${lt}`);
-  }
-  if (data.paymentTerms) lines.push(`Payment: ${data.paymentTerms}`);
-  if (data.validityPeriod) lines.push(`Validity: ${data.validityPeriod}`);
-  return lines.length > 0 ? lines.join("\n") : "No prior data.";
-}
+import { Orchestrator } from "./orchestrator";
+import { ResponseCrafter } from "./experts/response-crafter";
+import type {
+  ExtractionAnalysis,
+  EscalationAnalysis,
+  ExpertOpinion,
+} from "./experts/types";
 
 export interface InitialEmailResult {
   emailText: string;
@@ -48,16 +29,14 @@ export interface InitialEmailResult {
 
 export class AgentPipeline {
   private llmService: LLMService;
-  private extractor: Extractor;
-  private policyEvaluator: PolicyEvaluator;
-  private responseGenerator: ResponseGenerator;
+  private orchestrator: Orchestrator;
+  private responseCrafter: ResponseCrafter;
   private instructionClassifier: InstructionClassifier;
 
   constructor(llmService: LLMService) {
     this.llmService = llmService;
-    this.extractor = new Extractor(llmService);
-    this.policyEvaluator = new PolicyEvaluator(llmService);
-    this.responseGenerator = new ResponseGenerator(llmService);
+    this.orchestrator = new Orchestrator(llmService);
+    this.responseCrafter = new ResponseCrafter(llmService);
     this.instructionClassifier = new InstructionClassifier(llmService);
   }
 
@@ -70,7 +49,6 @@ export class AgentPipeline {
       throw new Error(`Initial email generation failed: ${parsed.error}`);
     }
 
-    // subjectLine comes through the structured output schema directly
     let subjectLine = "Quote Request";
     try {
       const raw = JSON.parse(llmResult.response.content);
@@ -110,67 +88,82 @@ export class AgentPipeline {
       }
     }
 
-    // Stage 1: Extract data from supplier email (with conversation context if available)
-    const extraction = await this.extractor.extract(
+    const classifiedInstructions = {
+      negotiationRules,
+      escalationTriggers,
+      specialInstructions: orderContext.specialInstructions ?? "",
+    };
+
+    // Stage 1-2: Orchestrator runs experts in parallel, makes decision via LLM loop
+    const orchestratorResult = await this.orchestrator.run(
       request.supplierMessage,
+      orderContext,
+      classifiedInstructions,
       request.conversationHistory,
       request.priorExtractedData
-        ? formatPriorDataForPrompt(request.priorExtractedData)
-        : undefined
     );
 
-    // Stage 2: Deterministic pre-policy checks
-    const preCheck = checkPrePolicyEscalation(extraction);
-    if (preCheck) {
-      return this.buildEscalationResponse(extraction, preCheck.reasoning);
-    }
+    const { decision, trace, expertOpinions, extractedData, extractionOpinion, needsAnalysis } = orchestratorResult;
 
-    // Stage 3: Policy evaluation + decision (single LLM call, with conversation context)
-    const policyResult = await this.policyEvaluator.evaluate(
-      extraction.data!,
-      negotiationRules,
-      escalationTriggers,
+    // Build extraction result for backward compatibility
+    const extractionAnalysis = extractionOpinion.analysis as ExtractionAnalysis;
+    const extraction: ExtractionResult = {
+      success: extractionAnalysis.success,
+      data: extractionAnalysis.extractedData,
+      confidence: extractionAnalysis.confidence,
+      notes: extractionAnalysis.notes,
+      error: extractionAnalysis.error,
+      provider: extractionOpinion.provider,
+      model: extractionOpinion.model,
+      latencyMs: extractionOpinion.latencyMs,
+      inputTokens: extractionOpinion.inputTokens,
+      outputTokens: extractionOpinion.outputTokens,
+      retryCount: 0,
+    };
+
+    const action = decision.action!;
+
+    // Stage 3: Craft response (conditional LLM call for counter/clarify)
+    const generatedResponse = await this.responseCrafter.craft({
+      action,
+      reasoning: decision.reasoning,
+      extractedData,
       orderContext,
-      request.conversationHistory
-    );
-
-    // Stage 4: Final decision (deterministic overrides + guardrails)
-    const decision = makeDecision({
-      extraction,
-      policyEvaluation: policyResult,
-      escalationTriggers,
-      negotiationRules,
+      conversationHistory: request.conversationHistory,
+      specialInstructions: orderContext.specialInstructions,
+      counterTerms: decision.counterTerms ?? undefined,
+      needsAnalysis,
     });
 
-    // Stage 5: Generate response (conditional LLM call)
-    const generatedResponse = await this.responseGenerator.generate(
-      decision.action,
-      extraction.data!,
-      policyResult,
-      orderContext,
-      decision.reasoning
-    );
+    // Compute backward-compatible policyEvaluation from expert opinions
+    const policyEvaluation = this.buildPolicyEvaluation(expertOpinions, decision.reasoning, action);
 
-    // Stage 6: Assemble final response
+    // Compute observability totals
+    const allOpinionMetrics = expertOpinions.map(o => ({
+      latencyMs: o.latencyMs,
+      inputTokens: o.inputTokens,
+      outputTokens: o.outputTokens,
+    }));
+    const totalLLMCalls = expertOpinions.filter(o => o.provider !== "none").length
+      + trace.totalIterations
+      + (generatedResponse.provider ? 1 : 0);
+    const totalLatencyMs = allOpinionMetrics.reduce((s, m) => s + m.latencyMs, 0)
+      + (generatedResponse.latencyMs ?? 0);
+    const totalInputTokens = allOpinionMetrics.reduce((s, m) => s + m.inputTokens, 0)
+      + (generatedResponse.inputTokens ?? 0);
+    const totalOutputTokens = allOpinionMetrics.reduce((s, m) => s + m.outputTokens, 0)
+      + (generatedResponse.outputTokens ?? 0);
+
     return {
-      action: decision.action,
+      action,
       reasoning: decision.reasoning,
-      extractedData: extraction.data,
+      extractedData,
       extraction,
       counterOffer: generatedResponse.counterOffer,
       proposedApproval: generatedResponse.proposedApproval,
       escalationReason: generatedResponse.escalationReason,
       clarificationEmail: generatedResponse.clarificationEmail,
-      policyEvaluation: {
-        rulesMatched: policyResult.rulesMatched,
-        complianceStatus: policyResult.complianceStatus,
-        details: policyResult.reasoning,
-        provider: policyResult.provider,
-        model: policyResult.model,
-        latencyMs: policyResult.latencyMs,
-        inputTokens: policyResult.inputTokens,
-        outputTokens: policyResult.outputTokens,
-      },
+      policyEvaluation,
       responseGeneration: generatedResponse.provider
         ? {
             provider: generatedResponse.provider,
@@ -180,24 +173,42 @@ export class AgentPipeline {
             outputTokens: generatedResponse.outputTokens!,
           }
         : undefined,
+      // New orchestration fields
+      expertOpinions,
+      orchestratorTrace: trace,
+      totalLLMCalls,
+      totalLatencyMs,
+      totalInputTokens,
+      totalOutputTokens,
     };
   }
 
-  private buildEscalationResponse(
-    extraction: ExtractionResult,
-    reasoning: string
-  ): AgentProcessResponse {
+  private buildPolicyEvaluation(
+    opinions: ExpertOpinion[],
+    reasoning: string,
+    action: string
+  ): AgentProcessResponse["policyEvaluation"] {
+    // Synthesize compliance from expert opinions
+    const escalationOpinion = opinions.find(o => o.expertName === "escalation");
+    const escalationAnalysis = escalationOpinion?.analysis as EscalationAnalysis | undefined;
+
+    let complianceStatus: ComplianceStatus;
+    if (escalationAnalysis?.shouldEscalate) {
+      complianceStatus = "non_compliant";
+    } else if (action === "accept") {
+      complianceStatus = "compliant";
+    } else if (action === "counter") {
+      complianceStatus = "non_compliant";
+    } else {
+      complianceStatus = "partial";
+    }
+
+    const rulesMatched = escalationAnalysis?.triggersEvaluated ?? [];
+
     return {
-      action: "escalate",
-      reasoning,
-      extractedData: extraction.data,
-      extraction,
-      escalationReason: reasoning,
-      policyEvaluation: {
-        rulesMatched: [],
-        complianceStatus: "non_compliant" as ComplianceStatus,
-        details: "Escalated before policy evaluation",
-      },
+      rulesMatched,
+      complianceStatus,
+      details: reasoning,
     };
   }
 }

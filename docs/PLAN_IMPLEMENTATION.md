@@ -298,7 +298,7 @@ src/
 
 **Status:** Fully implemented. See `B1.md` for the original implementation spec and `docs/changelog.md` (versions 0.1.0–0.3.2) for full history.
 
-**What was built:** LLM Service (Claude structured output via tool_use), data extraction, policy evaluation, decision engine, response generation, full pipeline orchestrator, ConversationContext for multi-turn memory, InstructionClassifier (single merchant input), 4 CLI harnesses (`extract`, `pipeline`, `chat`, `session`), 106 unit + 21 live tests.
+**What was built:** LLM Service (Claude structured output via tool_use), data extraction, multi-agent orchestration (ExtractionExpert, EscalationExpert, NeedsExpert, Orchestrator, ResponseCrafter), full pipeline orchestrator, ConversationContext for multi-turn memory, InstructionClassifier (single merchant input), 4 CLI harnesses (`extract`, `pipeline`, `chat`, `session`), 110 unit + 21 live tests.
 
 ---
 

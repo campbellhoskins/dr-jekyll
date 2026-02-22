@@ -2,8 +2,8 @@ import * as path from "path";
 import { LLMService } from "@/lib/llm/service";
 import { ClaudeProvider } from "@/lib/llm/providers/claude";
 import { Extractor } from "@/lib/agent/extractor";
-import { PolicyEvaluator } from "@/lib/agent/policy-evaluator";
-import { ResponseGenerator } from "@/lib/agent/response-generator";
+import { EscalationExpert } from "@/lib/agent/experts/escalation";
+import { ResponseCrafter } from "@/lib/agent/experts/response-crafter";
 import { AgentPipeline } from "@/lib/agent/pipeline";
 import type { ExtractedQuoteData, OrderContext } from "@/lib/agent/types";
 
@@ -13,8 +13,8 @@ const describeOrSkip = apiKey ? describe : describe.skip;
 describeOrSkip("Live structured output (tool_use) tests", () => {
   let service: LLMService;
   let extractor: Extractor;
-  let policyEvaluator: PolicyEvaluator;
-  let responseGenerator: ResponseGenerator;
+  let escalationExpert: EscalationExpert;
+  let responseCrafter: ResponseCrafter;
   let pipeline: AgentPipeline;
 
   const sampleData: ExtractedQuoteData = {
@@ -48,8 +48,8 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
       retryDelayMs: 1000,
     });
     extractor = new Extractor(service);
-    policyEvaluator = new PolicyEvaluator(service);
-    responseGenerator = new ResponseGenerator(service);
+    escalationExpert = new EscalationExpert(service);
+    responseCrafter = new ResponseCrafter(service);
     pipeline = new AgentPipeline(service);
   });
 
@@ -66,45 +66,33 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
     expect(result.error).toBeNull();
   });
 
-  it("policy evaluation returns valid PolicyDecisionOutput via structured output", async () => {
-    const result = await policyEvaluator.evaluate(
-      sampleData,
-      "Accept if price below $5.00. Lead time under 45 days.",
-      "Escalate if MOQ exceeds 1000.",
-      sampleContext
-    );
+  it("escalation evaluation returns valid EscalationAnalysis via structured output", async () => {
+    const opinion = await escalationExpert.analyze({
+      supplierMessage: "Price is $4.80 per unit, MOQ 500.",
+      escalationTriggers: "Escalate if MOQ exceeds 1000.",
+      extractedData: sampleData,
+      orderContext: { skuName: sampleContext.skuName, supplierSku: sampleContext.supplierSku },
+    });
 
-    expect(["compliant", "non_compliant", "partial"]).toContain(result.complianceStatus);
-    expect(["accept", "counter", "escalate", "clarify"]).toContain(result.recommendedAction);
-    expect(result.reasoning.length).toBeGreaterThan(0);
-    expect(typeof result.escalationTriggered).toBe("boolean");
+    expect(opinion.expertName).toBe("escalation");
+    const analysis = opinion.analysis as { type: string; shouldEscalate: boolean; reasoning: string };
+    expect(analysis.type).toBe("escalation");
+    expect(typeof analysis.shouldEscalate).toBe("boolean");
+    expect(analysis.reasoning.length).toBeGreaterThan(0);
   });
 
   it("counter-offer generation returns valid emailText via structured output", async () => {
-    const result = await responseGenerator.generate(
-      "counter",
-      sampleData,
-      {
-        rulesMatched: ["price range"],
-        complianceStatus: "non_compliant",
-        recommendedAction: "counter",
-        reasoning: "Price too high",
-        escalationTriggered: false,
-        counterTerms: { targetPrice: 4.0 },
-        provider: "claude",
-        model: "m",
-        latencyMs: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-      },
-      sampleContext,
-      "Price $4.80 exceeds target"
-    );
+    const result = await responseCrafter.craft({
+      action: "counter",
+      reasoning: "Price $4.80 exceeds target",
+      extractedData: sampleData,
+      orderContext: sampleContext,
+      counterTerms: { targetPrice: 4.0 },
+    });
 
     expect(result.counterOffer).toBeDefined();
     expect(result.counterOffer!.draftEmail.length).toBeGreaterThan(10);
     expect(typeof result.counterOffer!.proposedTerms).toBe("string");
-    // No escalation fallback — structured output should work
     expect(result.escalationReason).toBeUndefined();
   });
 
@@ -116,13 +104,12 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
       paymentTerms: null,
     };
 
-    const result = await responseGenerator.generate(
-      "clarify",
-      nullData,
-      null,
-      sampleContext,
-      "Need pricing information"
-    );
+    const result = await responseCrafter.craft({
+      action: "clarify",
+      reasoning: "Need pricing information",
+      extractedData: nullData,
+      orderContext: sampleContext,
+    });
 
     expect(result.clarificationEmail).toBeDefined();
     expect(result.clarificationEmail!.length).toBeGreaterThan(10);
