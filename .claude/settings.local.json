@@ -17,7 +17,29 @@
       "WebFetch(domain:railway.com)",
       "WebFetch(domain:masteringjs.io)",
       "Bash(ls:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd market research and update local settings\n\n- Add docs/market_research.md\n- Update Claude local settings\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd market research and update local settings\n\n- Add docs/market_research.md\n- Update Claude local settings\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "WebFetch(domain:docs.sentry.io)",
+      "WebFetch(domain:sentry.io)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)",
+      "WebFetch(domain:develop.sentry.dev)",
+      "WebFetch(domain:signoz.io)",
+      "WebFetch(domain:www.baytechconsulting.com)",
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm init:*)",
+      "Bash(npx jest --passWithNoTests)",
+      "Bash(npx jest tests/unit/llm/providers/claude.test.ts)",
+      "Bash(npx jest:*)",
+      "Bash(npx tsx:*)",
+      "Bash(git status:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run test:live:*)",
+      "WebFetch(domain:ai-sdk.dev)",
+      "WebFetch(domain:js.useinstructor.com)",
+      "WebFetch(domain:vercel.com)",
+      "Bash(npm run pipeline:*)",
+      "Bash(npm run extract:*)",
+      "Bash(npm run session:*)"
     ]
   }
 }
