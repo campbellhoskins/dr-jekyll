@@ -18,13 +18,15 @@ export class PolicyEvaluator {
     extractedData: ExtractedQuoteData,
     negotiationRules: string,
     escalationTriggers: string,
-    orderContext: OrderContext
+    orderContext: OrderContext,
+    conversationHistory?: string
   ): Promise<PolicyEvaluationResult> {
     const prompt = buildPolicyDecisionPrompt(
       extractedData,
       negotiationRules,
       escalationTriggers,
-      orderContext
+      orderContext,
+      conversationHistory
     );
 
     let llmContent: string;

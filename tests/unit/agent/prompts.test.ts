@@ -15,10 +15,11 @@ describe("buildExtractionPrompt", () => {
     expect(prompt.userMessage).toContain(emailText);
   });
 
-  it("system prompt requests JSON output", () => {
+  it("uses structured output schema", () => {
     const prompt = buildExtractionPrompt(emailText);
 
-    expect(prompt.systemPrompt).toMatch(/json/i);
+    expect(prompt.outputSchema).toBeDefined();
+    expect(prompt.outputSchema!.name).toBe("extract_quote");
   });
 
   it("system prompt defines all expected fields", () => {

@@ -75,17 +75,12 @@ describeOrSkip("Live pipeline tests", () => {
     expect(result.counterOffer!.draftEmail.length).toBeGreaterThan(0);
   });
 
-  it("MOQ exceeds trigger -> pipeline produces a result", async () => {
+  it("MOQ exceeds trigger -> escalate", async () => {
     const scenario = loadScenario("escalation-moq.json");
     const result = await pipeline.process(buildRequest(scenario));
 
-    // Ideally escalate, but Haiku unreliably detects MOQ triggers.
-    // This test validates the pipeline doesn't crash on this scenario.
-    // The deterministic guardrail (decision-engine) catches this when
-    // the LLM correctly sets escalationTriggered=true. With a stronger
-    // model (Sonnet/Opus), expect escalate consistently.
-    expect(result.action).toBeTruthy();
-    expect(result.policyEvaluation).toBeDefined();
+    expect(result.action).toBe("escalate");
+    expect(result.escalationReason).toBeTruthy();
   });
 
   it("product discontinued -> escalate", async () => {
@@ -99,15 +94,14 @@ describeOrSkip("Live pipeline tests", () => {
     const scenario = loadScenario("clarification-needed.json");
     const result = await pipeline.process(buildRequest(scenario));
 
-    // LLM might return clarify or escalate for ambiguous — both acceptable
-    expect(["clarify", "escalate"]).toContain(result.action);
+    expect(result.action).toBe("clarify");
+    expect(result.clarificationEmail).toBeTruthy();
   });
 
   it("low confidence email -> escalate", async () => {
     const scenario = loadScenario("low-confidence.json");
     const result = await pipeline.process(buildRequest(scenario));
 
-    // Should escalate via pre-policy check (confidence < 0.3)
     expect(result.action).toBe("escalate");
   });
 
@@ -115,7 +109,8 @@ describeOrSkip("Live pipeline tests", () => {
     const scenario = loadScenario("partial-compliance.json");
     const result = await pipeline.process(buildRequest(scenario));
 
-    // LLM might counter or escalate — both reasonable for partial compliance
-    expect(["counter", "escalate"]).toContain(result.action);
+    expect(result.action).toBe("counter");
+    expect(result.counterOffer).toBeDefined();
+    expect(result.counterOffer!.draftEmail.length).toBeGreaterThan(0);
   });
 });

@@ -123,36 +123,31 @@ export function buildInitialEmailPrompt(orderContext: OrderContext): LLMRequest 
 
 const EXTRACTION_SYSTEM_PROMPT = `You are a data extraction assistant specialized in parsing supplier emails for purchase order negotiations.
 
-Given a supplier email, extract structured quote data as JSON. Return ONLY valid JSON with no additional text.
+Given a supplier email, extract ONLY the information that is EXPLICITLY stated. You must NEVER infer, assume, or hallucinate values that the supplier did not clearly provide.
 
-Required JSON fields:
-- quotedPrice: number or null — the per-unit price quoted by the supplier
-- quotedPriceCurrency: string — ISO 4217 currency code (e.g., "USD", "CNY", "EUR"). Default to "USD" if the currency is not explicitly stated but prices appear to be in dollars.
-- availableQuantity: number or null — the quantity the supplier is quoting for (not MOQ)
-- moq: number or null — minimum order quantity, if mentioned
-- leadTimeMinDays: integer or null — minimum lead time in days. Convert weeks to days (1 week = 7 days). If a single value is given (e.g., "30 days"), set both min and max to that value.
-- leadTimeMaxDays: integer or null — maximum lead time in days. If a range is given (e.g., "25-30 days"), set leadTimeMinDays to 25 and leadTimeMaxDays to 30.
-- paymentTerms: string or null — payment terms as stated (e.g., "30% deposit, balance before shipping", "T/T", "NET 30")
-- validityPeriod: string or null — how long the quote is valid, if mentioned (e.g., "valid for 30 days", "expires March 15")
-- confidence: number between 0.0 and 1.0 — how confident you are in the extraction:
-  - 0.9-1.0: All key fields clearly stated with no ambiguity
-  - 0.6-0.8: Some fields present, some inferred or missing
-  - 0.3-0.5: Partial information, significant uncertainty
-  - 0.0-0.2: No pricing data found, email is conversational or unrelated
-- notes: string array — important observations that don't fit the structured fields above. Examples:
-  - "Supplier mentioned product discontinuation"
-  - "Tiered pricing: 100-499 at $2.80, 500-999 at $2.40, 1000+ at $2.10"
-  - "Multiple items quoted — only first extracted"
-  - "Supplier is asking for specifications before quoting"
-  - "FOB Shenzhen shipping terms"
+CRITICAL RULE: If the supplier did not explicitly mention a field, you MUST set it to null. Do not guess. Do not use default values. Do not fill in "reasonable" values. null means "not mentioned".
 
-Rules:
-- If the supplier did not provide a price, set quotedPrice to null and confidence low.
+Field definitions:
+- quotedPrice: number or null — the per-unit price the supplier explicitly stated. null if no price mentioned.
+- quotedPriceCurrency: string or null — ISO 4217 currency code (e.g., "USD", "CNY"). Default "USD" only if a dollar sign or dollar amount is used. null if no price at all.
+- availableQuantity: number or null — the specific quantity the supplier is quoting for, ONLY if the supplier explicitly stated a quantity. Do NOT copy the requested quantity as the available quantity. null if not explicitly stated by the supplier.
+- moq: number or null — minimum order quantity ONLY if the supplier explicitly used words like "minimum", "MOQ", "min order", or "at least". A supplier saying "I can do 100 units" does NOT mean MOQ is 100 — it means they are quoting for 100 units. null if not explicitly stated as a minimum.
+- leadTimeMinDays: integer or null — ONLY if the supplier explicitly mentioned lead time, delivery time, shipping time, or production time. null if not mentioned. Do NOT assume or invent a lead time.
+- leadTimeMaxDays: integer or null — same rule. If a range like "25-30 days", set min=25, max=30. If single value like "30 days", set both to 30. null if not mentioned.
+- paymentTerms: string or null — ONLY if the supplier explicitly stated payment terms. null if not mentioned.
+- validityPeriod: string or null — ONLY if the supplier explicitly stated how long the quote is valid. null if not mentioned.
+- confidence: number 0.0-1.0:
+  - 0.9-1.0: All key fields clearly stated, no ambiguity
+  - 0.6-0.8: Some fields present, some missing
+  - 0.3-0.5: Partial information
+  - 0.0-0.2: No pricing data found
+- notes: string array — observations that don't fit above. Include shipping terms (FOB, CIF), tiered pricing details, multi-item notes, discontinuation warnings, etc.
+
+Additional rules:
 - If the supplier quoted multiple items, extract the first item and note the rest in notes.
 - If tiered pricing is given, extract the first tier as quotedPrice and capture all tiers in notes.
-- Do not invent or hallucinate data. If a field is not mentioned in the latest email, set it to null.
-- Currency: "RMB" = "CNY". If only "$" is used with no further context, assume "USD".
-- IMPORTANT: If prior conversation and previously extracted data are provided, carry forward any fields that the latest email does not contradict. For example, if a prior message established quantity=500 and the latest email only confirms a new price, keep quantity=500.`;
+- Currency: "RMB" = "CNY". If "$" is used, assume "USD".
+- CARRY-FORWARD: If prior conversation and previously extracted data are provided, carry forward any fields that the latest email does not contradict. For example, if a prior message established quantity=500 and the latest email only confirms a new price, keep quantity=500. But do NOT carry forward if the field was hallucinated in the prior data — only carry forward values that were genuinely stated by the supplier.`;
 
 export function buildExtractionPrompt(
   emailText: string,
@@ -216,7 +211,8 @@ CRITICAL Decision guidelines:
 - For "counter", identify which specific terms to negotiate and provide counterTerms.
 - For "clarify", explain what information is missing.
 - The lastKnownPrice is informational context ONLY — it is NOT a rule. Do not recommend counter just because the price is above lastKnownPrice. Only the negotiation rules determine compliance.
-- Do not invent rules. Only evaluate against the rules and triggers provided.`;
+- Do not invent rules. Only evaluate against the rules and triggers provided.
+- CONVERSATION CONTEXT: If conversation history is provided, use it to understand the negotiation stage. A rule like "never accept the first price" applies to the supplier's FIRST offer, not to every price they mention. If the supplier is responding to our counter-offer with a revised price, that is NOT a "first price" — it is a negotiated price. Evaluate it against the acceptance rules normally.`;
 
 function formatExtractedData(data: ExtractedQuoteData): string {
   const lines = [
@@ -247,16 +243,23 @@ export function buildPolicyDecisionPrompt(
   extractedData: ExtractedQuoteData,
   negotiationRules: string,
   escalationTriggers: string,
-  orderContext: OrderContext
+  orderContext: OrderContext,
+  conversationHistory?: string
 ): LLMRequest {
-  const userMessage = `## Extracted Quote Data
+  let userMessage = "";
+
+  if (conversationHistory) {
+    userMessage += `## Conversation History (use this to understand negotiation stage)\n${conversationHistory}\n\n`;
+  }
+
+  userMessage += `## Extracted Quote Data (from supplier's latest message)
 ${formatExtractedData(extractedData)}
 
 ## Merchant's Negotiation Rules
-${negotiationRules}
+${negotiationRules || "(No rules provided — use best judgment)"}
 
 ## Merchant's Escalation Triggers
-${escalationTriggers}
+${escalationTriggers || "(No escalation triggers provided)"}
 
 ## Order Context
 ${formatOrderContext(orderContext)}`;

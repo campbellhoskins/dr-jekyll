@@ -13,7 +13,8 @@
     "test:live": "jest --config jest.integration.config.ts",
     "extract": "tsx src/cli/extract.ts",
     "pipeline": "tsx src/cli/pipeline.ts",
-    "chat": "tsx src/cli/chat.ts"
+    "chat": "tsx src/cli/chat.ts",
+    "session": "tsx src/cli/test-session.ts"
   },
   "repository": {
     "type": "git",

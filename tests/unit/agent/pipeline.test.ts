@@ -76,6 +76,17 @@ const LOW_CONFIDENCE_EXTRACTION = JSON.stringify({
   notes: ["No pricing data found"],
 });
 
+const HIGH_MOQ_EXTRACTION = JSON.stringify({
+  quotedPrice: 4.5,
+  quotedPriceCurrency: "USD",
+  moq: 2000,
+  leadTimeMinDays: 25,
+  leadTimeMaxDays: 30,
+  paymentTerms: "30% deposit",
+  confidence: 0.95,
+  notes: [],
+});
+
 const DISCONTINUED_EXTRACTION = JSON.stringify({
   quotedPrice: null,
   quotedPriceCurrency: "USD",
@@ -172,7 +183,7 @@ describe("AgentPipeline", () => {
   });
 
   it("escalation trigger fires -> action=escalate despite good extraction", async () => {
-    const service = createSequentialMockLLMService([GOOD_EXTRACTION, ESCALATION_POLICY]);
+    const service = createSequentialMockLLMService([HIGH_MOQ_EXTRACTION, ESCALATION_POLICY]);
     const pipeline = new AgentPipeline(service);
 
     const result = await pipeline.process(baseRequest);

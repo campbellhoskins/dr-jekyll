@@ -1,0 +1,21 @@
+{
+  "name": "Counter then accept — multi-turn negotiation",
+  "description": "Supplier offers $45, agent should counter, supplier accepts $40, agent should accept. Tests: conversation context carry-forward, no hallucinated lead time, empty rules handling.",
+  "orderContext": {
+    "skuName": "shoes",
+    "supplierSku": "shoes",
+    "quantityRequested": "20",
+    "lastKnownPrice": 40,
+    "specialInstructions": "Make sure to let them offer the first price. Dont accept the first price and make a counter offer"
+  },
+  "negotiationRules": "Never accept the first price offered. Always counter with a lower price. Accept if the price is at or below $40 per unit.",
+  "escalationTriggers": "Escalate if supplier says the product is discontinued or unavailable.",
+  "supplierTurns": [
+    "Hi, we can do 20 shoes at $45 each",
+    "Sure, I will do $40 per pair"
+  ],
+  "expectations": [
+    { "turn": 1, "action": "counter", "priceExtracted": 45, "quantityExtracted": 20 },
+    { "turn": 2, "action": "accept", "priceExtracted": 40, "quantityExtracted": 20 }
+  ]
+}

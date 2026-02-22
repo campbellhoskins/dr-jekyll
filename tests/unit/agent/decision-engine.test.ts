@@ -1,5 +1,7 @@
 import {
   checkPrePolicyEscalation,
+  checkDeterministicTriggers,
+  checkPriceCompliance,
   makeDecision,
 } from "@/lib/agent/decision-engine";
 import type {
@@ -227,5 +229,149 @@ describe("makeDecision", () => {
     });
 
     expect(result.reasoning).toContain("Price is within acceptable range");
+  });
+
+  it("deterministic MOQ trigger catches what LLM missed", () => {
+    const result = makeDecision({
+      extraction: buildExtraction({
+        data: { ...buildExtraction().data!, moq: 2000 },
+      }),
+      policyEvaluation: buildPolicyEval({
+        complianceStatus: "compliant",
+        recommendedAction: "accept",
+        escalationTriggered: false,
+      }),
+      escalationTriggers: "Escalate if MOQ exceeds 1000 units.",
+    });
+
+    expect(result.action).toBe("escalate");
+    expect(result.reasoning).toContain("MOQ 2000 exceeds");
+  });
+
+  it("deterministic price trigger catches what LLM missed", () => {
+    const result = makeDecision({
+      extraction: buildExtraction({
+        data: { ...buildExtraction().data!, quotedPriceUsd: 6.0 },
+      }),
+      policyEvaluation: buildPolicyEval({
+        complianceStatus: "compliant",
+        recommendedAction: "accept",
+        escalationTriggered: false,
+      }),
+      escalationTriggers: "Escalate if price exceeds $5.50 per unit.",
+    });
+
+    expect(result.action).toBe("escalate");
+    expect(result.reasoning).toContain("Price $6 exceeds");
+  });
+
+  it("deterministic price compliance overrides LLM accept to counter", () => {
+    const result = makeDecision({
+      extraction: buildExtraction({
+        data: { ...buildExtraction().data!, quotedPriceUsd: 4.8 },
+      }),
+      policyEvaluation: buildPolicyEval({
+        complianceStatus: "compliant",
+        recommendedAction: "accept",
+        escalationTriggered: false,
+      }),
+      negotiationRules: "Acceptable range is $3.50 - $4.20 per unit.",
+    });
+
+    expect(result.action).toBe("counter");
+    expect(result.reasoning).toContain("exceeds acceptable range");
+  });
+
+  it("does not override when price is within range", () => {
+    const result = makeDecision({
+      extraction: buildExtraction({
+        data: { ...buildExtraction().data!, quotedPriceUsd: 4.0 },
+      }),
+      policyEvaluation: buildPolicyEval({
+        complianceStatus: "compliant",
+        recommendedAction: "accept",
+        escalationTriggered: false,
+      }),
+      negotiationRules: "Acceptable range is $3.50 - $4.20 per unit.",
+    });
+
+    expect(result.action).toBe("accept");
+  });
+});
+
+describe("checkDeterministicTriggers", () => {
+  const baseData = buildExtraction().data!;
+
+  it("detects MOQ exceeding threshold", () => {
+    const result = checkDeterministicTriggers(
+      { ...baseData, moq: 2000 },
+      "Escalate if MOQ exceeds 1000 units"
+    );
+    expect(result?.triggered).toBe(true);
+  });
+
+  it("does not trigger when MOQ is within threshold", () => {
+    const result = checkDeterministicTriggers(
+      { ...baseData, moq: 500 },
+      "Escalate if MOQ exceeds 1000 units"
+    );
+    expect(result).toBeNull();
+  });
+
+  it("detects price exceeding threshold", () => {
+    const result = checkDeterministicTriggers(
+      { ...baseData, quotedPriceUsd: 6.0 },
+      "Escalate if price exceeds $5.50"
+    );
+    expect(result?.triggered).toBe(true);
+  });
+
+  it("detects lead time exceeding threshold", () => {
+    const result = checkDeterministicTriggers(
+      { ...baseData, leadTimeMaxDays: 50 },
+      "Escalate if lead time exceeds 45 days"
+    );
+    expect(result?.triggered).toBe(true);
+  });
+
+  it("returns null when no triggers match", () => {
+    const result = checkDeterministicTriggers(
+      baseData,
+      "Escalate if supplier mentions discontinuation"
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns null for empty trigger text", () => {
+    const result = checkDeterministicTriggers(baseData, "");
+    expect(result).toBeNull();
+  });
+});
+
+describe("checkPriceCompliance", () => {
+  const baseData = buildExtraction().data!;
+
+  it("detects price above acceptable range", () => {
+    const result = checkPriceCompliance(
+      { ...baseData, quotedPriceUsd: 4.8 },
+      "Acceptable range is $3.50 - $4.20"
+    );
+    expect(result?.shouldCounter).toBe(true);
+  });
+
+  it("returns null when price is within range", () => {
+    const result = checkPriceCompliance(
+      { ...baseData, quotedPriceUsd: 4.0 },
+      "Acceptable range is $3.50 - $4.20"
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns null when no range specified in rules", () => {
+    const result = checkPriceCompliance(
+      { ...baseData, quotedPriceUsd: 10 },
+      "Accept if price is reasonable"
+    );
+    expect(result).toBeNull();
   });
 });

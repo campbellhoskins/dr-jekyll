@@ -125,18 +125,21 @@ export class AgentPipeline {
       return this.buildEscalationResponse(extraction, preCheck.reasoning);
     }
 
-    // Stage 3: Policy evaluation + decision (single LLM call)
+    // Stage 3: Policy evaluation + decision (single LLM call, with conversation context)
     const policyResult = await this.policyEvaluator.evaluate(
       extraction.data!,
       negotiationRules,
       escalationTriggers,
-      orderContext
+      orderContext,
+      request.conversationHistory
     );
 
-    // Stage 4: Final decision (deterministic overrides)
+    // Stage 4: Final decision (deterministic overrides + guardrails)
     const decision = makeDecision({
       extraction,
       policyEvaluation: policyResult,
+      escalationTriggers,
+      negotiationRules,
     });
 
     // Stage 5: Generate response (conditional LLM call)

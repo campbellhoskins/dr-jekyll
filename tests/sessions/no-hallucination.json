@@ -1,0 +1,18 @@
+{
+  "name": "No hallucinated fields",
+  "description": "Supplier only mentions price and quantity. Lead time, MOQ, payment terms must all be null — not hallucinated.",
+  "orderContext": {
+    "skuName": "widget",
+    "supplierSku": "WDG-01",
+    "quantityRequested": "100",
+    "lastKnownPrice": 5
+  },
+  "negotiationRules": "Accept if price is below $6 per unit.",
+  "escalationTriggers": "Escalate if lead time exceeds 60 days.",
+  "supplierTurns": [
+    "Hi, I can do 100 widgets for $5.50 each"
+  ],
+  "expectations": [
+    { "turn": 1, "action": "accept", "priceExtracted": 5.5, "quantityExtracted": 100 }
+  ]
+}

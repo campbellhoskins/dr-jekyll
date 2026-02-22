@@ -49,9 +49,15 @@ Detailed documentation is maintained in the `docs/` folder. Reference these file
 ## Testing Requirements
 
 This project uses strict TDD:
-1. Write tests that define expected behavior
-2. Implement features to pass tests
+1. Write tests FIRST that define the expected behavior — these are the contract
+2. Implement features to make those tests pass
 3. Run full suite after each feature
+
+**CRITICAL: Tests must NEVER be loosened to make them pass.** If a test fails, the implementation is wrong — not the test. Fix the code, fix the prompts, upgrade the model, add guardrails — but do not weaken assertions. A test that accepts multiple possible outcomes when only one is correct is a broken test. The only valid reasons to change a test are:
+- The requirement itself changed (user explicitly asked for different behavior)
+- The test was wrong from the start (testing the wrong thing)
+
+This applies equally to live integration tests. If Haiku can't reliably produce the correct action, the fix is better prompts or a better model — not a looser assertion.
 
 All external dependencies (Gmail API, LLM Service providers, email service) must be mocked for deterministic tests.
 
