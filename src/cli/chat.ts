@@ -9,7 +9,7 @@ import { AgentPipeline } from "../lib/agent/pipeline";
 import { ConversationContext } from "../lib/agent/conversation-context";
 import type { AgentProcessRequest, AgentProcessResponse, OrderInformation } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
-import { printInputContext, printExpertOpinionWithContext, printOrchestratorTrace, printResponse, printTotals } from "./display";
+import { printInputContext, printEvaluation, printDecision, printResponse, printTotals } from "./display";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -40,6 +40,11 @@ interface SessionConfig {
   orderInformation: OrderInformation;
 }
 
+/** Strip currency symbols and whitespace so parseFloat works on inputs like "$35" */
+function parseNumber(input: string): number {
+  return parseFloat(input.replace(/[^0-9.\-]/g, "")) || 0;
+}
+
 function loadScenarioConfig(filePath: string): SessionConfig {
   const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
   return {
@@ -58,9 +63,9 @@ function promptForConfig(rl: readline.Interface): Promise<SessionConfig> {
       const productName = await ask("  Product name: ");
       const supplierSku = await ask("  Supplier SKU: ");
       const qty = await ask("  Target quantity: ");
-      const targetPrice = await ask("  Target price ($): ");
-      const maxPrice = await ask("  Maximum acceptable price ($): ");
-      const lastPrice = await ask("  Last known price ($) [optional]: ");
+      const targetPrice = await ask("  Target price (USD, e.g. 35): ");
+      const maxPrice = await ask("  Max acceptable price (USD, e.g. 40): ");
+      const lastPrice = await ask("  Last known price (USD) [optional]: ");
 
       console.log("");
       const maxLeadTime = await ask("  Max lead time (days) [optional]: ");
@@ -84,9 +89,9 @@ function promptForConfig(rl: readline.Interface): Promise<SessionConfig> {
         },
         pricing: {
           currency: "USD",
-          targetPrice: parseFloat(targetPrice) || 0,
-          maximumAcceptablePrice: parseFloat(maxPrice) || 0,
-          lastKnownPrice: lastPrice ? parseFloat(lastPrice) : undefined,
+          targetPrice: parseNumber(targetPrice),
+          maximumAcceptablePrice: parseNumber(maxPrice),
+          lastKnownPrice: lastPrice ? parseNumber(lastPrice) : undefined,
         },
         quantity: {
           targetQuantity: parseInt(qty, 10) || 0,
@@ -108,7 +113,7 @@ function promptForConfig(rl: readline.Interface): Promise<SessionConfig> {
   });
 }
 
-function printResult(result: AgentProcessResponse, request: AgentProcessRequest, turn: number): void {
+function printTurnResult(result: AgentProcessResponse, request: AgentProcessRequest, turn: number): void {
   console.log(`\n${"=".repeat(60)}`);
   console.log(`  TURN ${turn} -- PIPELINE RESULT`);
   console.log(`${"=".repeat(60)}`);
@@ -117,28 +122,21 @@ function printResult(result: AgentProcessResponse, request: AgentProcessRequest,
   console.log(`\n-- INPUT CONTEXT --`);
   printInputContext(request, "  ");
 
-  // Initial expert opinions (parallel fan-out)
-  if (result.expertOpinions) {
-    console.log(`\n-- PARALLEL EXPERT FAN-OUT --`);
-    for (const opinion of result.expertOpinions.slice(0, 2)) {
-      console.log(`\n  [${opinion.expertName.toUpperCase()}]`);
-      printExpertOpinionWithContext(opinion, request, "    ");
-    }
-  }
+  // Systematic evaluation
+  console.log(`\n-- SYSTEMATIC EVALUATION --`);
+  printEvaluation(result, "  ");
 
-  // Orchestrator trace — full reasoning chain
-  if (result.orchestratorTrace) {
-    console.log(`\n-- ORCHESTRATOR DECISION LOOP --`);
-    printOrchestratorTrace(result.orchestratorTrace, request, "  ");
-  }
+  // Decision
+  console.log(`\n-- DECISION --`);
+  printDecision(result, "  ");
 
   // Response
-  console.log(`\n-- RESPONSE CRAFTER --`);
-  printResponse(result);
+  console.log(`\n-- RESPONSE --`);
+  printResponse(result, "  ");
 
   // Totals
   console.log(`\n-- Totals --`);
-  printTotals(result);
+  printTotals(result, "  ");
   console.log(`${"=".repeat(60)}\n`);
 }
 
@@ -172,6 +170,10 @@ async function main(): Promise<void> {
   console.log(`  Pricing:      target $${oi.pricing.targetPrice}, max $${oi.pricing.maximumAcceptablePrice}`);
 
   const context = new ConversationContext();
+
+  // Cache rules across turns
+  let cachedOrderContext: string | undefined;
+  let cachedMerchantRules: string | undefined;
 
   console.log(`\n  Generating initial email to supplier...`);
   try {
@@ -218,24 +220,23 @@ async function main(): Promise<void> {
         supplierMessage: trimmed,
         orderInformation: oi,
         conversationHistory: context.formatForPrompt(),
-        priorExtractedData: context.getMergedData(),
-        turnNumber: turn,
+        cachedOrderContext,
+        cachedMerchantRules,
       };
 
       try {
         const result = await pipeline.process(request);
 
-        if (result.extractedData) {
-          context.mergeExtraction(result.extractedData);
+        // Cache rules for subsequent turns
+        if (!cachedOrderContext) cachedOrderContext = result.orderContext;
+        if (!cachedMerchantRules) cachedMerchantRules = result.merchantRules;
+
+        // Add agent response to conversation
+        if (result.action !== "escalate") {
+          context.addAgentMessage(result.responseText);
         }
 
-        if (result.counterOffer) {
-          context.addAgentMessage(result.counterOffer.draftEmail);
-        } else if (result.clarificationEmail) {
-          context.addAgentMessage(result.clarificationEmail);
-        }
-
-        printResult(result, request, turn);
+        printTurnResult(result, request, turn);
       } catch (err) {
         console.error(`\nPipeline error: ${err}`);
       }

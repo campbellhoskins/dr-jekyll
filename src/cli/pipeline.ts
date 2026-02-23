@@ -7,7 +7,7 @@ import { OpenAIProvider } from "../lib/llm/providers/openai";
 import { AgentPipeline } from "../lib/agent/pipeline";
 import type { AgentProcessRequest, AgentProcessResponse, OrderInformation } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
-import { printInputContext, printExpertOpinionWithContext, printOrchestratorTrace, printResponse, printTotals } from "./display";
+import { printInputContext, printEvaluation, printDecision, printResponse, printTotals, estimateCost, formatCost } from "./display";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -49,37 +49,20 @@ interface ScenarioFile {
   supplierMessage: string;
   orderInformation: OrderInformation;
   expectedAction: string;
-  expectedComplianceStatus: string;
 }
 
 function printResult(result: AgentProcessResponse, scenario: ScenarioFile): void {
   const actionMatch = result.action === scenario.expectedAction ? "MATCH" : "MISMATCH";
 
   console.log(`\n  Action:            ${result.action} [expected: ${scenario.expectedAction}] ${actionMatch}`);
-  console.log(`  Compliance:        ${result.policyEvaluation.complianceStatus}`);
   console.log(`  Reasoning:         ${result.reasoning.substring(0, 120)}${result.reasoning.length > 120 ? "..." : ""}`);
 
-  if (result.extractedData) {
-    const d = result.extractedData;
-    console.log(`  Quoted Price:      ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency}` : "---"}`);
+  if (result.action === "accept" || result.action === "counter") {
+    console.log(`  Response:          ${result.responseText.substring(0, 100)}${result.responseText.length > 100 ? "..." : ""}`);
   }
 
-  if (result.proposedApproval) {
-    const a = result.proposedApproval;
-    console.log(`  Approval:          ${a.quantity} units @ $${a.price} = $${a.total}`);
-  }
-
-  if (result.counterOffer) {
-    console.log(`  Counter Email:     ${result.counterOffer.draftEmail.substring(0, 100)}...`);
-    console.log(`  Counter Terms:     ${result.counterOffer.proposedTerms}`);
-  }
-
-  if (result.clarificationEmail) {
-    console.log(`  Clarify Email:     ${result.clarificationEmail.substring(0, 100)}...`);
-  }
-
-  if (result.escalationReason) {
-    console.log(`  Escalation:        ${result.escalationReason}`);
+  if (result.action === "escalate") {
+    console.log(`  Escalation:        ${result.responseText.substring(0, 150)}${result.responseText.length > 150 ? "..." : ""}`);
   }
 }
 
@@ -90,23 +73,16 @@ function printVerboseResult(result: AgentProcessResponse, request: AgentProcessR
   console.log(`\n=== INPUT CONTEXT ===`);
   printInputContext(request);
 
-  // 2. Parallel expert fan-out with context
-  if (result.expertOpinions) {
-    console.log(`\n=== PARALLEL EXPERT FAN-OUT ===`);
-    for (const opinion of result.expertOpinions.slice(0, 2)) {
-      console.log(`\n-- ${opinion.expertName.toUpperCase()} EXPERT --`);
-      printExpertOpinionWithContext(opinion, request);
-    }
-  }
+  // 2. Systematic evaluation
+  console.log(`\n=== SYSTEMATIC EVALUATION ===`);
+  printEvaluation(result);
 
-  // 3. Orchestrator trace — full reasoning chain with context
-  if (result.orchestratorTrace) {
-    console.log(`\n=== ORCHESTRATOR DECISION LOOP ===`);
-    printOrchestratorTrace(result.orchestratorTrace, request);
-  }
+  // 3. Decision
+  console.log(`\n=== DECISION ===`);
+  printDecision(result);
 
-  // 4. Response crafting
-  console.log(`\n=== RESPONSE CRAFTER ===`);
+  // 4. Response
+  console.log(`\n=== RESPONSE ===`);
   printResponse(result);
 
   // 5. Totals
@@ -137,6 +113,10 @@ async function main(): Promise<void> {
   console.log(`Running ${scenarioFiles.length} scenario(s)...\n`);
 
   let passed = 0;
+  let totalCost = 0;
+  let totalTokensIn = 0;
+  let totalTokensOut = 0;
+
   for (const file of scenarioFiles) {
     const fullPath = allScenarios ? path.join(scenariosDir, file) : path.resolve(process.cwd(), scenarioPath!);
     const scenario: ScenarioFile = JSON.parse(fs.readFileSync(fullPath, "utf8"));
@@ -158,9 +138,16 @@ async function main(): Promise<void> {
     }
 
     if (result.action === scenario.expectedAction) passed++;
+
+    totalTokensIn += result.inputTokens;
+    totalTokensOut += result.outputTokens;
+    const cost = estimateCost(result.model, result.inputTokens, result.outputTokens);
+    if (cost !== null) totalCost += cost;
   }
 
   console.log(`\n\nResults: ${passed}/${scenarioFiles.length} scenarios matched expected action.`);
+  console.log(`Total tokens: ${totalTokensIn} in / ${totalTokensOut} out (${totalTokensIn + totalTokensOut} total)`);
+  if (totalCost > 0) console.log(`Total cost:   ${formatCost(totalCost)}`);
 }
 
 main().catch((err) => {

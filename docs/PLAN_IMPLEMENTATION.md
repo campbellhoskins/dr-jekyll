@@ -298,7 +298,7 @@ src/
 
 **Status:** Fully implemented. See `B1.md` for the original implementation spec and `docs/changelog.md` (versions 0.1.0–0.3.2) for full history.
 
-**What was built:** LLM Service (Claude structured output via tool_use), data extraction, multi-agent orchestration (ExtractionExpert, EscalationExpert, NeedsExpert, Orchestrator, ResponseCrafter), full pipeline orchestrator, ConversationContext for multi-turn memory, InstructionClassifier (single merchant input), 4 CLI harnesses (`extract`, `pipeline`, `chat`, `session`), 110 unit + 21 live tests.
+**What was built:** LLM Service (Claude structured output via tool_use), structured OrderInformation schema (Zod-validated), rules generation (OrderInformation → ORDER_CONTEXT + MERCHANT_RULES, cached across turns), single-call agent decision pipeline with XML-parsed output (systematic evaluation, decision, response), three-action framework (accept/counter/escalate), initial email generation, ConversationContext for multi-turn memory, 4 CLI harnesses (`extract`, `pipeline`, `chat`, `session`), 53 unit + 13 live tests.
 
 ---
 

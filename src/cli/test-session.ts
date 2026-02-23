@@ -1,8 +1,7 @@
 /**
  * Automated test session runner.
  * Runs a scripted conversation (agent + supplier turns) and prints
- * the full pipeline trace for each turn. Used for debugging and
- * iterating on prompt quality without manual interaction.
+ * the full pipeline trace for each turn.
  *
  * Usage:
  *   npx tsx src/cli/test-session.ts --session tests/sessions/example.json
@@ -18,7 +17,7 @@ import { AgentPipeline } from "../lib/agent/pipeline";
 import { ConversationContext } from "../lib/agent/conversation-context";
 import type { AgentProcessRequest, AgentProcessResponse, OrderInformation } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
-import { printInputContext, printExpertOpinionWithContext, printOrchestratorTrace, printResponse, printTotals } from "./display";
+import { printInputContext, printEvaluation, printDecision, printResponse, printTotals } from "./display";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -30,8 +29,6 @@ interface SessionFile {
   expectations?: {
     turn: number;
     action?: string;
-    priceExtracted?: number;
-    quantityExtracted?: number;
   }[];
 }
 
@@ -43,37 +40,26 @@ function buildLLMService(): LLMService {
   return new LLMService({ primaryProvider: provider, maxRetriesPerProvider: 3, retryDelayMs: 1000 });
 }
 
-function printTurn(turn: number, supplierMsg: string, result: AgentProcessResponse, request: AgentProcessRequest, verbose: boolean): void {
+function printTurn(turn: number, result: AgentProcessResponse, request: AgentProcessRequest, verbose: boolean): void {
   console.log(`\n${"---".repeat(20)}`);
   console.log(`TURN ${turn}`);
   console.log(`${"---".repeat(20)}`);
 
-  // Full input context
   console.log(`\n  -- INPUT CONTEXT --`);
   printInputContext(request, "  ");
 
-  // Initial expert opinions (parallel fan-out)
-  if (result.expertOpinions) {
-    console.log(`\n  -- PARALLEL EXPERT FAN-OUT --`);
-    for (const opinion of result.expertOpinions.slice(0, 2)) {
-      console.log(`\n  [${opinion.expertName.toUpperCase()}]`);
-      printExpertOpinionWithContext(opinion, request, "    ");
-    }
-  }
+  console.log(`\n  -- SYSTEMATIC EVALUATION --`);
+  printEvaluation(result, "  ");
 
-  // Orchestrator trace — full reasoning chain
-  if (result.orchestratorTrace) {
-    console.log(`\n  -- ORCHESTRATOR DECISION LOOP --`);
-    printOrchestratorTrace(result.orchestratorTrace, request, "  ");
-  }
+  console.log(`\n  -- DECISION --`);
+  printDecision(result, "  ");
 
-  // Response
-  console.log(`\n  -- RESPONSE CRAFTER --`);
-  printResponse(result);
+  console.log(`\n  -- RESPONSE --`);
+  printResponse(result, "  ");
 
   if (verbose) {
     console.log(`\n  -- Totals --`);
-    printTotals(result);
+    printTotals(result, "  ");
   }
 }
 
@@ -89,12 +75,6 @@ function checkExpectation(
   const failures: string[] = [];
   if (exp.action && result.action !== exp.action) {
     failures.push(`action: expected "${exp.action}", got "${result.action}"`);
-  }
-  if (exp.priceExtracted !== undefined && result.extractedData?.quotedPrice !== exp.priceExtracted) {
-    failures.push(`price: expected ${exp.priceExtracted}, got ${result.extractedData?.quotedPrice}`);
-  }
-  if (exp.quantityExtracted !== undefined && result.extractedData?.availableQuantity !== exp.quantityExtracted) {
-    failures.push(`quantity: expected ${exp.quantityExtracted}, got ${result.extractedData?.availableQuantity}`);
   }
 
   if (failures.length === 0) {
@@ -135,6 +115,10 @@ async function main(): Promise<void> {
   const pipeline = new AgentPipeline(service);
   const context = new ConversationContext();
 
+  // Cache rules across turns
+  let cachedOrderContext: string | undefined;
+  let cachedMerchantRules: string | undefined;
+
   // Generate initial email
   console.log(`\nGenerating initial email...`);
   try {
@@ -156,22 +140,22 @@ async function main(): Promise<void> {
       supplierMessage: supplierMsg,
       orderInformation: oi,
       conversationHistory: context.formatForPrompt(),
-      priorExtractedData: context.getMergedData(),
-      turnNumber: i + 1,
+      cachedOrderContext,
+      cachedMerchantRules,
     };
 
     const result = await pipeline.process(request);
 
-    if (result.extractedData) {
-      context.mergeExtraction(result.extractedData);
-    }
-    if (result.counterOffer) {
-      context.addAgentMessage(result.counterOffer.draftEmail);
-    } else if (result.clarificationEmail) {
-      context.addAgentMessage(result.clarificationEmail);
+    // Cache rules for subsequent turns
+    if (!cachedOrderContext) cachedOrderContext = result.orderContext;
+    if (!cachedMerchantRules) cachedMerchantRules = result.merchantRules;
+
+    // Add agent response to conversation
+    if (result.action !== "escalate") {
+      context.addAgentMessage(result.responseText);
     }
 
-    printTurn(i + 1, supplierMsg, result, request, verbose);
+    printTurn(i + 1, result, request, verbose);
 
     // Check expectations
     const check = checkExpectation(i + 1, result, session.expectations);
@@ -184,9 +168,7 @@ async function main(): Promise<void> {
 
   // Summary
   console.log(`\n${"=".repeat(60)}`);
-  console.log(`MERGED DATA AFTER ALL TURNS:`);
-  console.log(context.formatMergedDataForPrompt());
-  console.log(`\nTotal messages in context: ${context.getMessageCount()}`);
+  console.log(`Total messages in context: ${context.getMessageCount()}`);
   if (session.expectations) {
     console.log(`\nExpectations: ${allPassed ? "ALL PASSED" : "SOME FAILED"}`);
   }

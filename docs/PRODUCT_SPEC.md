@@ -603,7 +603,7 @@ A single merchant will use different tactics for different suppliers, and two me
 
 ### 7.3 Policy Evaluation
 
-1. Merchant's single instructions field is classified via LLM into negotiation rules, escalation triggers, and special instructions (InstructionClassifier — runs once at pipeline start)
+1. Merchant's order information is transformed via LLM into ORDER_CONTEXT (factual summary) and MERCHANT_RULES (behavioral rules, escalation triggers) — generated once and cached across turns
 2. Include supplier intelligence context (known patterns, tendencies) when available
 3. Compare supplier response against classified negotiation rules
 4. Check classified escalation triggers (checked first — any trigger fires → escalate)

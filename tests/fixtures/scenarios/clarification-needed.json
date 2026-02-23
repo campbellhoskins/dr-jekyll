@@ -11,6 +11,6 @@
     "paymentTerms": { "requiredTerms": "Net 30" },
     "escalation": { "additionalTriggers": ["Escalate if MOQ exceeds 500 units", "Escalate if supplier mentions discontinuation"] }
   },
-  "expectedAction": "clarify",
+  "expectedAction": "counter",
   "expectedComplianceStatus": "partial"
 }

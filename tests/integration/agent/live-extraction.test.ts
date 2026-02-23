@@ -1,132 +1,68 @@
-import * as fs from "fs";
-import * as path from "path";
 import { LLMService } from "@/lib/llm/service";
 import { ClaudeProvider } from "@/lib/llm/providers/claude";
-import { Extractor } from "@/lib/agent/extractor";
-
-const FIXTURES_DIR = path.resolve(
-  __dirname,
-  "../../fixtures/supplier-emails"
-);
-
-function loadFixture(name: string): string {
-  return fs.readFileSync(path.join(FIXTURES_DIR, name), "utf8").trim();
-}
+import { AgentPipeline } from "@/lib/agent/pipeline";
+import { buildTestOrderInformation } from "../../helpers/order-information";
 
 // Skip all tests if no API key
 const apiKey = process.env.ANTHROPIC_API_KEY;
 const describeOrSkip = apiKey ? describe : describe.skip;
 
-describeOrSkip("Live extraction tests", () => {
-  let extractor: Extractor;
+describeOrSkip("Live rules generation tests", () => {
+  let pipeline: AgentPipeline;
 
   beforeAll(() => {
     const provider = new ClaudeProvider(
       apiKey!,
-      process.env.LLM_PRIMARY_MODEL ?? "claude-3-haiku-20240307"
+      process.env.LLM_TEST_MODEL ?? "claude-3-haiku-20240307"
     );
     const service = new LLMService({
       primaryProvider: provider,
       maxRetriesPerProvider: 3,
       retryDelayMs: 1000,
     });
-    extractor = new Extractor(service);
+    pipeline = new AgentPipeline(service);
   });
 
-  it("extracts simple quote accurately", async () => {
-    const email = loadFixture("simple-quote.txt");
-    const result = await extractor.extract(email);
+  it("generates order context with product and pricing info", async () => {
+    const oi = buildTestOrderInformation({
+      product: { productName: "Bamboo Cutting Board", supplierProductCode: "BCB-001", merchantSKU: "BCB-001" },
+      pricing: { targetPrice: 4.00, maximumAcceptablePrice: 5.00 },
+      quantity: { targetQuantity: 500 },
+    });
 
-    expect(result.success).toBe(true);
-    expect(result.data!.quotedPrice).toBeCloseTo(4.5, 1);
-    expect(result.data!.quotedPriceCurrency).toBe("USD");
-    expect(result.data!.quotedPriceUsd).toBeCloseTo(4.5, 1);
-    expect(result.data!.moq).toBe(500);
-    expect(result.confidence).toBeGreaterThan(0.8);
+    const result = await pipeline.generateRules(oi);
+
+    expect(result.orderContext).toContain("Bamboo Cutting Board");
+    expect(result.orderContext.length).toBeGreaterThan(50);
+    expect(result.provider).toBe("claude");
   });
 
-  it("handles multi-currency (CNY)", async () => {
-    const email = loadFixture("multi-currency.txt");
-    const result = await extractor.extract(email);
+  it("generates merchant rules with pricing thresholds", async () => {
+    const oi = buildTestOrderInformation({
+      pricing: { targetPrice: 4.00, maximumAcceptablePrice: 5.00 },
+      escalation: { additionalTriggers: ["Escalate if MOQ exceeds 1000 units"] },
+    });
 
-    expect(result.success).toBe(true);
-    expect(result.data!.quotedPriceCurrency).toBe("CNY");
-    expect(result.data!.quotedPrice).toBeCloseTo(8.5, 1);
-    expect(result.data!.quotedPriceUsd).not.toBeNull();
-    expect(result.data!.quotedPriceUsd!).toBeGreaterThan(0);
-    expect(result.data!.moq).toBe(1000);
+    const result = await pipeline.generateRules(oi);
+
+    expect(result.merchantRules.length).toBeGreaterThan(100);
+    // Should contain pricing rules with actual values
+    expect(result.merchantRules).toMatch(/4/);
+    expect(result.merchantRules).toMatch(/5/);
+    // Should contain escalation triggers
+    expect(result.merchantRules).toMatch(/MOQ|1000/i);
   });
 
-  it("recognizes ambiguous response", async () => {
-    const email = loadFixture("ambiguous-response.txt");
-    const result = await extractor.extract(email);
+  it("generates rules with lead time and payment terms", async () => {
+    const oi = buildTestOrderInformation({
+      leadTime: { maximumLeadTimeDays: 45, preferredLeadTimeDays: 30 },
+      paymentTerms: { requiredTerms: "Net 30" },
+    });
 
-    expect(result.success).toBe(true);
-    expect(result.data!.quotedPrice).toBeNull();
-    expect(result.confidence).toBeLessThan(0.4);
-    expect(result.notes.length).toBeGreaterThan(0);
-  });
+    const result = await pipeline.generateRules(oi);
 
-  it("extracts partial information", async () => {
-    const email = loadFixture("partial-info.txt");
-    const result = await extractor.extract(email);
-
-    expect(result.success).toBe(true);
-    expect(result.data!.quotedPrice).toBeCloseTo(12.8, 1);
-    expect(result.data!.quotedPriceCurrency).toBe("USD");
-    expect(result.confidence).toBeGreaterThanOrEqual(0.5);
-    expect(result.confidence).toBeLessThanOrEqual(0.95);
-  });
-
-  it("extracts counter-offer data", async () => {
-    const email = loadFixture("counter-offer.txt");
-    const result = await extractor.extract(email);
-
-    expect(result.success).toBe(true);
-    expect(result.data!.quotedPrice).toBeCloseTo(4.2, 1);
-    expect(result.data!.availableQuantity).toBe(300);
-    expect(result.data!.leadTimeMinDays).toBe(45);
-    expect(result.data!.leadTimeMaxDays).toBe(45);
-  });
-
-  it("recognizes rejection/discontinuation", async () => {
-    const email = loadFixture("rejection.txt");
-    const result = await extractor.extract(email);
-
-    expect(result.success).toBe(true);
-    expect(result.data!.quotedPrice).toBeNull();
-    // Notes should mention discontinuation
-    const notesText = result.notes.join(" ").toLowerCase();
-    expect(notesText).toMatch(/discontinu|no longer|stopped/);
-  });
-
-  it("handles tiered pricing", async () => {
-    const email = loadFixture("moq-constraint.txt");
-    const result = await extractor.extract(email);
-
-    expect(result.success).toBe(true);
-    // Should extract at least one price tier
-    expect(result.data!.quotedPrice).not.toBeNull();
-    // Notes should mention tiered pricing
-    expect(result.notes.length).toBeGreaterThan(0);
-  });
-
-  it("handles no-data conversational email", async () => {
-    const email = loadFixture("conversational-no-numbers.txt");
-    const result = await extractor.extract(email);
-
-    expect(result.success).toBe(true);
-    expect(result.data!.quotedPrice).toBeNull();
-    expect(result.confidence).toBeLessThan(0.4);
-  });
-
-  it("handles multi-item quote", async () => {
-    const email = loadFixture("multi-item-quote.txt");
-    const result = await extractor.extract(email);
-
-    expect(result.success).toBe(true);
-    // Should extract at least the first item's price
-    expect(result.data).not.toBeNull();
-    expect(result.data!.quotedPrice).not.toBeNull();
+    expect(result.merchantRules).toMatch(/lead time/i);
+    expect(result.merchantRules).toMatch(/45/);
+    expect(result.merchantRules).toMatch(/Net 30|payment/i);
   });
 });

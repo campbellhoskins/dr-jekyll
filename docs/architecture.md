@@ -173,56 +173,51 @@ Vercel Cron              Email Poller           Gmail API            Railway Wor
      │                        │                     │                      │
 ```
 
-### 3. Agent Decision Flow (Multi-Agent Orchestration)
+### 3. Agent Decision Flow (Single-Call Pipeline)
 
 ```
                          ┌─────────────────────┐
-                    ①    │ Instruction          │  Classify merchant's plain-English
-                         │ Classifier           │  instructions into rules, triggers,
-                         │                      │  and special instructions (LLM)
+                    ①    │ OrderInformation     │  Structured merchant input:
+                         │ (merchant input)     │  product, pricing, quantity,
+                         │                      │  terms, negotiation rules
                          └──────────┬───────────┘
                                     │
                                     ▼
-                    ┌──────────────────────────────────┐
-                    │   PARALLEL FAN-OUT (Promise.all)  │
-               ②    │                                   │
-                    │  ┌──────────────┐  ┌────────────┐ │
-                    │  │  Extraction  │  │ Escalation │ │
-                    │  │  Expert      │  │ Expert     │ │
-                    │  │  (LLM)      │  │ (LLM)     │ │
-                    │  └──────────────┘  └────────────┘ │
-                    └──────────────┬────────────────────┘
-                                   │ all opinions
-                                   ▼
                          ┌─────────────────────┐
-                    ③    │   ORCHESTRATOR      │◄──┐
-                         │   (LLM decides)     │   │ loop: re-consult
-                         │                      │   │ an expert if needed
-                         │   Can call Needs    │───┘ (e.g. NeedsExpert
-                         │   Expert on-demand  │     for info gaps)
+                    ②    │ Rules Generation     │  Transform OrderInformation
+                         │ (LLM)               │  into ORDER_CONTEXT (facts)
+                         │                      │  + MERCHANT_RULES (behavior)
+                         │ Cached across turns  │  Cached after first call
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                    ③    │ Agent Decision       │  Single LLM call with:
+                         │ (LLM)               │  - Conversation history
+                         │                      │  - ORDER_CONTEXT
+                         │                      │  - MERCHANT_RULES
+                         │                      │  - Supplier message
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                    ④    │ XML Output Parser    │  Extract from response:
+                         │                      │  <systematic_evaluation>
+                         │                      │  <decision>
+                         │                      │  <response>
                          └──────────┬───────────┘
                                     │ action decided
-                        ┌───────────┼───────────┬───────────┐
-                        │           │           │           │
-                        ▼           ▼           ▼           ▼
-                     Accept     Counter     Escalate   Clarify
-                        │           │           │           │
-                        ▼           ▼           ▼           ▼
-                         ┌─────────────────────┐
-                    ④    │ Response Crafter     │
-                         │                      │
-                         │ Accept → Proposed   │
-                         │   Approval (no LLM) │
-                         │ Counter → Draft     │
-                         │   email (LLM)       │
-                         │ Clarify → Draft     │
-                         │   email (LLM)       │
-                         │ Escalate → Reason   │
-                         │   passthrough       │
-                         └─────────────────────┘
+                        ┌───────────┼───────────┐
+                        │           │           │
+                        ▼           ▼           ▼
+                     Accept     Counter     Escalate
+                        │           │           │
+                        ▼           ▼           ▼
+                   Response    Draft email  Escalation
+                   text        to supplier  notice
 ```
 
-Each expert = same model, different focused system prompt. The orchestrator loops (max 10 iterations) until it has enough information, then decides. Code never overrides the LLM.
+Single LLM call performs systematic evaluation, decides action, and drafts response — all in one pass. Code never overrides the LLM. Rules are cached across conversation turns to save tokens on subsequent calls.
 
 ### 4. Approval Flow
 
@@ -297,24 +292,25 @@ Merchant                  Dashboard                 Agent               Supplier
 
 ### Policy Engine
 
-The policy engine evaluates supplier responses against merchant-defined rules written in plain English, enriched with supplier intelligence when available.
+Policy evaluation is currently handled by the AgentPipeline's single-call approach. The LLM receives ORDER_CONTEXT and MERCHANT_RULES (generated from structured OrderInformation) and evaluates the supplier's response in a single pass.
 
 **Input:**
-- Extracted quote data (price, quantity, lead time, etc.)
-- Merchant's instructions (single plain-English field, classified by LLM into negotiation rules, escalation triggers, and special instructions)
-- Supplier intelligence (behavioral patterns, negotiation tendencies, response norms)
+- Supplier message (raw email text)
+- ORDER_CONTEXT (factual order summary generated from OrderInformation)
+- MERCHANT_RULES (behavioral rules generated from OrderInformation — pricing limits, negotiation strategy, escalation triggers)
+- Conversation history (full thread, no truncation)
 
 **Output:**
-- Compliance status (acceptable / counter needed / escalate)
-- Matched rules with reasoning
-- Recommended action
+- Systematic evaluation (term-by-term analysis in XML)
+- Decision with action (accept / counter / escalate) and reasoning
+- Draft response text (email or escalation notice)
 
 **Process:**
-1. LLM parses natural language rules into structured conditions
-2. Incorporate supplier intelligence context (known tendencies, typical terms)
-3. Compare extracted data against conditions
-4. Determine overall compliance
-5. Generate reasoning for audit trail
+1. OrderInformation is transformed into ORDER_CONTEXT + MERCHANT_RULES via LLM (cached across turns)
+2. Single LLM call evaluates supplier message against all rules systematically
+3. LLM determines overall compliance and recommended action
+4. LLM drafts appropriate response in the same call
+5. Full reasoning captured for audit trail
 
 ### LLM Service
 
@@ -363,23 +359,17 @@ Accumulates and maintains behavioral knowledge about suppliers across all mercha
 
 ### Agent Pipeline (`src/lib/agent/`)
 
-The full agent is composed of modular, independently testable components orchestrated by `AgentPipeline`:
+The agent uses a single-call pipeline architecture where one LLM call performs systematic evaluation, decides the action, and drafts the response:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| **AgentPipeline** | `pipeline.ts` | Top-level entry point — classifies instructions, runs orchestrator, crafts response |
-| **Orchestrator** | `orchestrator.ts` | Multi-agent orchestration loop — runs experts in parallel, LLM decides action, can re-consult experts |
-| **InstructionClassifier** | `instruction-classifier.ts` | Classifies a single merchant instructions field into negotiation rules, escalation triggers, and special instructions (LLM) |
-| **ExtractionExpert** | `experts/extraction.ts` | Wraps Extractor — extracts structured quote data from supplier emails (LLM). Sees only raw data, no merchant rules |
-| **EscalationExpert** | `experts/escalation.ts` | Evaluates supplier message against escalation triggers (LLM). Sees triggers + data, no negotiation rules |
-| **NeedsExpert** | `experts/needs.ts` | Identifies information gaps and prioritizes questions to ask (LLM). Called on-demand by orchestrator |
-| **ResponseCrafter** | `experts/response-crafter.ts` | Drafts response: accept → deterministic ProposedApproval, counter/clarify → LLM-drafted email, escalate → reason passthrough |
-| **Extractor** | `extractor.ts` | Core extraction logic reused by ExtractionExpert — currency normalization and USD conversion (LLM) |
-| **ConversationContext** | `conversation-context.ts` | Tracks full conversation history and merges extraction data across turns — no truncation, full context in every LLM call |
-| **OutputParser** | `output-parser.ts` | Parses and validates LLM JSON output with Zod schemas, handles markdown blocks, numeric string coercion, currency normalization |
-| **Prompts** | `prompts.ts`, `experts/prompts.ts` | LLM prompt builders with system/user messages and JSON Schema definitions for structured output |
+| **AgentPipeline** | `pipeline.ts` | Top-level entry point — generates rules, calls LLM for decisions, parses XML output. Methods: `generateRules()`, `process()`, `generateInitialEmail()` |
+| **ConversationContext** | `conversation-context.ts` | Tracks full conversation history — no truncation, full context in every LLM call |
+| **XML Parser** | `xml-parser.ts` | Extracts content from XML tags (`<systematic_evaluation>`, `<decision>`, `<response>`) and parses action from decision text |
+| **Prompts** | `prompts.ts` | LLM prompt builders: `buildRulesGenerationPrompt()`, `buildAgentPrompt()`, `buildInitialEmailPrompt()` |
+| **Types** | `types.ts` | OrderInformation schema (Zod-validated), AgentAction, AgentProcessRequest/Response, currency normalization |
 
-**CLI Tools** (`src/cli/`): 4 harnesses for testing — `extract` (single extraction), `pipeline` (scenario fixtures), `chat` (interactive multi-turn), `session` (automated with expectations).
+**CLI Tools** (`src/cli/`): 4 harnesses for testing — `extract` (rules generation), `pipeline` (scenario fixtures), `chat` (interactive multi-turn), `session` (automated with expectations).
 
 ### Audit Logger
 

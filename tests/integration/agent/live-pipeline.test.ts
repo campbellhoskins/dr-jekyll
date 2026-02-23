@@ -51,9 +51,8 @@ describeOrSkip("Live pipeline tests", () => {
     const result = await pipeline.process(buildRequest(scenario));
 
     expect(result.action).toBe("accept");
-    expect(result.proposedApproval).toBeDefined();
-    expect(result.proposedApproval!.price).toBeGreaterThan(0);
-    expect(result.policyEvaluation.complianceStatus).toBe("compliant");
+    expect(result.responseText.length).toBeGreaterThan(0);
+    expect(result.reasoning.length).toBeGreaterThan(0);
   });
 
   it("price above target -> counter", async () => {
@@ -61,8 +60,7 @@ describeOrSkip("Live pipeline tests", () => {
     const result = await pipeline.process(buildRequest(scenario));
 
     expect(result.action).toBe("counter");
-    expect(result.counterOffer).toBeDefined();
-    expect(result.counterOffer!.draftEmail.length).toBeGreaterThan(0);
+    expect(result.responseText.length).toBeGreaterThan(0);
   });
 
   it("MOQ exceeds trigger -> escalate", async () => {
@@ -70,7 +68,7 @@ describeOrSkip("Live pipeline tests", () => {
     const result = await pipeline.process(buildRequest(scenario));
 
     expect(result.action).toBe("escalate");
-    expect(result.escalationReason).toBeTruthy();
+    expect(result.responseText.length).toBeGreaterThan(0);
   });
 
   it("product discontinued -> escalate", async () => {
@@ -80,12 +78,12 @@ describeOrSkip("Live pipeline tests", () => {
     expect(result.action).toBe("escalate");
   });
 
-  it("ambiguous response -> clarify", async () => {
+  it("ambiguous response without pricing -> counter (asks for info)", async () => {
     const scenario = loadScenario("clarification-needed.json");
     const result = await pipeline.process(buildRequest(scenario));
 
-    expect(result.action).toBe("clarify");
-    expect(result.clarificationEmail).toBeTruthy();
+    expect(result.action).toBe("counter");
+    expect(result.responseText.length).toBeGreaterThan(0);
   });
 
   it("low confidence email -> escalate", async () => {
@@ -100,7 +98,6 @@ describeOrSkip("Live pipeline tests", () => {
     const result = await pipeline.process(buildRequest(scenario));
 
     expect(result.action).toBe("counter");
-    expect(result.counterOffer).toBeDefined();
-    expect(result.counterOffer!.draftEmail.length).toBeGreaterThan(0);
+    expect(result.responseText.length).toBeGreaterThan(0);
   });
 });

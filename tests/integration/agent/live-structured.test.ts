@@ -1,35 +1,13 @@
-import * as path from "path";
 import { LLMService } from "@/lib/llm/service";
 import { ClaudeProvider } from "@/lib/llm/providers/claude";
-import { Extractor } from "@/lib/agent/extractor";
-import { EscalationExpert } from "@/lib/agent/experts/escalation";
-import { ResponseCrafter } from "@/lib/agent/experts/response-crafter";
 import { AgentPipeline } from "@/lib/agent/pipeline";
-import type { ExtractedQuoteData } from "@/lib/agent/types";
 import { buildTestOrderInformation } from "../../helpers/order-information";
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 const describeOrSkip = apiKey ? describe : describe.skip;
 
-describeOrSkip("Live structured output (tool_use) tests", () => {
-  let service: LLMService;
-  let extractor: Extractor;
-  let escalationExpert: EscalationExpert;
-  let responseCrafter: ResponseCrafter;
+describeOrSkip("Live structured output tests", () => {
   let pipeline: AgentPipeline;
-
-  const sampleData: ExtractedQuoteData = {
-    quotedPrice: 4.8,
-    quotedPriceCurrency: "USD",
-    quotedPriceUsd: 4.8,
-    availableQuantity: 500,
-    moq: 500,
-    leadTimeMinDays: 30,
-    leadTimeMaxDays: 30,
-    paymentTerms: "30% deposit",
-    validityPeriod: null,
-    rawExtractionJson: {},
-  };
 
   const sampleOrderInformation = buildTestOrderInformation({
     product: { productName: "LED Desk Lamp", supplierProductCode: "LDL-200", merchantSKU: "LDL-200" },
@@ -42,80 +20,27 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
       apiKey!,
       process.env.LLM_TEST_MODEL ?? "claude-3-haiku-20240307"
     );
-    service = new LLMService({
+    const service = new LLMService({
       primaryProvider: provider,
       maxRetriesPerProvider: 3,
       retryDelayMs: 1000,
     });
-    extractor = new Extractor(service);
-    escalationExpert = new EscalationExpert(service);
-    responseCrafter = new ResponseCrafter(service);
     pipeline = new AgentPipeline(service);
   });
 
-  it("extraction returns valid ExtractedQuoteData via structured output", async () => {
-    const result = await extractor.extract(
-      "Hi, our price is $4.50 per unit, MOQ 500, lead time 25-30 days. 30% deposit. FOB Shenzhen."
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.data).not.toBeNull();
-    expect(typeof result.data!.quotedPrice).toBe("number");
-    expect(typeof result.data!.quotedPriceCurrency).toBe("string");
-    expect(result.confidence).toBeGreaterThan(0);
-    expect(result.error).toBeNull();
-  });
-
-  it("escalation evaluation returns valid EscalationAnalysis via structured output", async () => {
-    const opinion = await escalationExpert.analyze({
-      supplierMessage: "Price is $4.80 per unit, MOQ 500.",
-      extractedData: sampleData,
-      orderInformation: buildTestOrderInformation({
-        product: { productName: "LED Desk Lamp", supplierProductCode: "LDL-200", merchantSKU: "LDL-200" },
-        escalation: { additionalTriggers: ["Escalate if MOQ exceeds 1000"] },
-      }),
-    });
-
-    expect(opinion.expertName).toBe("escalation");
-    const analysis = opinion.analysis as { type: string; shouldEscalate: boolean; reasoning: string };
-    expect(analysis.type).toBe("escalation");
-    expect(typeof analysis.shouldEscalate).toBe("boolean");
-    expect(analysis.reasoning.length).toBeGreaterThan(0);
-  });
-
-  it("counter-offer generation returns valid emailText via structured output", async () => {
-    const result = await responseCrafter.craft({
-      action: "counter",
-      reasoning: "Price $4.80 exceeds target",
-      extractedData: sampleData,
-      orderInformation: sampleOrderInformation,
-      counterTerms: { targetPrice: 4.0 },
-    });
-
-    expect(result.counterOffer).toBeDefined();
-    expect(result.counterOffer!.draftEmail.length).toBeGreaterThan(10);
-    expect(typeof result.counterOffer!.proposedTerms).toBe("string");
-    expect(result.escalationReason).toBeUndefined();
-  });
-
-  it("clarification generation returns valid emailText via structured output", async () => {
-    const nullData: ExtractedQuoteData = {
-      ...sampleData,
-      quotedPrice: null,
-      quotedPriceUsd: null,
-      paymentTerms: null,
-    };
-
-    const result = await responseCrafter.craft({
-      action: "clarify",
-      reasoning: "Need pricing information",
-      extractedData: nullData,
+  it("agent produces valid action and response for a counter scenario", async () => {
+    const result = await pipeline.process({
+      supplierMessage: "Hi, our price is $4.50 per unit, MOQ 500, lead time 25-30 days. 30% deposit. FOB Shenzhen.",
       orderInformation: sampleOrderInformation,
     });
 
-    expect(result.clarificationEmail).toBeDefined();
-    expect(result.clarificationEmail!.length).toBeGreaterThan(10);
-    expect(result.escalationReason).toBeUndefined();
+    expect(["accept", "counter", "escalate"]).toContain(result.action);
+    expect(result.reasoning.length).toBeGreaterThan(0);
+    expect(result.decision.length).toBeGreaterThan(0);
+    expect(result.responseText.length).toBeGreaterThan(10);
+    expect(result.provider).toBe("claude");
+    expect(result.inputTokens).toBeGreaterThan(0);
+    expect(result.outputTokens).toBeGreaterThan(0);
   });
 
   it("initial email generation returns valid emailText + subjectLine", async () => {
@@ -126,5 +51,14 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
     expect(result.provider).toBe("claude");
     expect(result.inputTokens).toBeGreaterThan(0);
     expect(result.outputTokens).toBeGreaterThan(0);
+  });
+
+  it("rules generation returns order context and merchant rules", async () => {
+    const result = await pipeline.generateRules(sampleOrderInformation);
+
+    expect(result.orderContext.length).toBeGreaterThan(50);
+    expect(result.merchantRules.length).toBeGreaterThan(100);
+    expect(result.orderContext).toContain("LED Desk Lamp");
+    expect(result.provider).toBe("claude");
   });
 });

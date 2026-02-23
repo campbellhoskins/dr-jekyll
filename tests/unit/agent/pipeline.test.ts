@@ -5,20 +5,14 @@ import type { AgentProcessRequest } from "@/lib/agent/types";
 import { buildTestOrderInformation } from "../../helpers/order-information";
 
 /**
- * Routing mock: inspects outputSchema.name to return the correct response.
- * Supports parallel expert calls and sequential orchestrator iterations.
+ * Creates a mock LLM service that returns different responses based on call order.
+ * Call 1 = rules generation, Call 2 = agent prompt.
  */
-function createRoutingMockLLMService(
-  responses: Record<string, string | Error | ((callIndex: number) => string | Error)>
-): LLMService {
-  const callCounts: Record<string, number> = {};
+function createSequentialMockLLMService(responses: (string | Error)[]): LLMService {
+  let callIndex = 0;
   return {
-    call: jest.fn(async (req: LLMRequest): Promise<LLMServiceResult> => {
-      const schemaName = req.outputSchema?.name ?? "unknown";
-      callCounts[schemaName] = (callCounts[schemaName] ?? 0) + 1;
-      const respOrFn = responses[schemaName];
-      if (respOrFn === undefined) throw new Error(`No mock response for schema: ${schemaName}`);
-      const resp = typeof respOrFn === "function" ? respOrFn(callCounts[schemaName]) : respOrFn;
+    call: jest.fn(async (_req: LLMRequest): Promise<LLMServiceResult> => {
+      const resp = responses[callIndex++];
       if (resp instanceof Error) throw resp;
       return {
         response: {
@@ -37,129 +31,93 @@ function createRoutingMockLLMService(
 
 // ─── Mock LLM responses ─────────────────────────────────────────────────────
 
-const GOOD_EXTRACTION = JSON.stringify({
-  quotedPrice: 4.5,
-  quotedPriceCurrency: "USD",
-  moq: 500,
-  leadTimeMinDays: 25,
-  leadTimeMaxDays: 30,
-  paymentTerms: "30% deposit",
-  confidence: 0.95,
-  notes: [],
-});
+const RULES_RESPONSE = `<order_context>
+MERCHANT
+- Merchant Name: Test Merchant
 
-const NO_ESCALATION = JSON.stringify({
-  shouldEscalate: false,
-  reasoning: "MOQ 500 is within threshold of 1000.",
-  triggersEvaluated: ["MOQ exceeds 1000"],
-  triggeredTriggers: [],
-  severity: "low",
-});
+PRODUCT
+- Product: Bamboo Cutting Board (BCB-001)
+- Target Quantity: 500
 
-const ACCEPT_DECISION = JSON.stringify({
-  readyToAct: true,
-  action: "accept",
-  reasoning: "All rules satisfied at $4.50",
-  nextExpert: null,
-  questionForExpert: null,
-  counterTerms: null,
-});
+PRICING REFERENCE
+- Target Price: $4.00 USD
+</order_context>
 
-const COUNTER_DECISION = JSON.stringify({
-  readyToAct: true,
-  action: "counter",
-  reasoning: "Price $4.50 exceeds max $4.20",
-  nextExpert: null,
-  questionForExpert: null,
-  counterTerms: { targetPrice: 3.8 },
-});
+<merchant_rules>
+## PRICING RULES
+- If supplier price is at or below $4.00 → ACCEPTABLE
+- If supplier price is above $4.00 but at or below $5.00 → counter toward $4.00
+- If supplier price exceeds $5.00 → ESCALATE immediately
 
-const ESCALATION_TRIGGERED = JSON.stringify({
-  shouldEscalate: true,
-  reasoning: "MOQ 2000 exceeds trigger threshold of 1000.",
-  triggersEvaluated: ["MOQ exceeds 1000"],
-  triggeredTriggers: ["MOQ exceeds 1000"],
-  severity: "high",
-});
+## QUANTITY RULES
+- Target quantity: 500
+- If MOQ exceeds 1000 → ESCALATE
 
-const ESCALATE_DECISION = JSON.stringify({
-  readyToAct: true,
-  action: "escalate",
-  reasoning: "Escalation trigger fired: MOQ exceeds 1000",
-  nextExpert: null,
-  questionForExpert: null,
-  counterTerms: null,
-});
+## ESCALATION RULES
+- ESCALATE if: MOQ exceeds 1000 units
+</merchant_rules>`;
 
-const COUNTER_EMAIL = JSON.stringify({
-  emailText: "We were hoping for $3.80 per unit.",
-  proposedTermsSummary: "Counter at $3.80/unit",
-});
+const ACCEPT_AGENT_RESPONSE = `<systematic_evaluation>
+**1. Relevant Rules:**
+PRICING: Target $4.00, max $5.00
+The supplier quoted $3.80 which is below the target price.
 
-const LOW_CONFIDENCE_EXTRACTION = JSON.stringify({
-  quotedPrice: null,
-  quotedPriceCurrency: "USD",
-  confidence: 0.15,
-  notes: ["No pricing data found"],
-});
+**7. Overall Action:**
+All terms acceptable. Price $3.80 is below target $4.00.
+Overall Action: ACCEPT
+</systematic_evaluation>
 
-const ESCALATE_LOW_CONFIDENCE = JSON.stringify({
-  readyToAct: true,
-  action: "escalate",
-  reasoning: "Extraction confidence too low to evaluate",
-  nextExpert: null,
-  questionForExpert: null,
-  counterTerms: null,
-});
+<decision>
+- Price: ACCEPTABLE - $3.80 is below target $4.00
+- Quantity: ACCEPTABLE - 500 units matches target
+Overall Action: ACCEPT
+</decision>
 
-const HIGH_MOQ_EXTRACTION = JSON.stringify({
-  quotedPrice: 4.5,
-  quotedPriceCurrency: "USD",
-  moq: 2000,
-  leadTimeMinDays: 25,
-  leadTimeMaxDays: 30,
-  paymentTerms: "30% deposit",
-  confidence: 0.95,
-  notes: [],
-});
+<response>
+Thank you for your competitive quote of $3.80 per unit. We are pleased to accept these terms for 500 units of the Bamboo Cutting Board (BCB-001).
+</response>`;
 
-const DISCONTINUED_EXTRACTION = JSON.stringify({
-  quotedPrice: null,
-  quotedPriceCurrency: "USD",
-  confidence: 0.8,
-  notes: ["Supplier mentioned product discontinuation"],
-});
+const COUNTER_AGENT_RESPONSE = `<systematic_evaluation>
+**1. Relevant Rules:**
+PRICING: Target $4.00, max $5.00
+The supplier quoted $4.50 which is above target but within acceptable range.
 
-const DISCONTINUED_ESCALATION = JSON.stringify({
-  shouldEscalate: true,
-  reasoning: "Supplier indicated product discontinuation.",
-  triggersEvaluated: ["Product discontinuation"],
-  triggeredTriggers: ["Product discontinuation"],
-  severity: "critical",
-});
+**7. Overall Action:**
+Price needs counter. $4.50 > $4.00 target but < $5.00 max.
+Overall Action: COUNTER
+</systematic_evaluation>
 
-const ESCALATE_DISCONTINUED = JSON.stringify({
-  readyToAct: true,
-  action: "escalate",
-  reasoning: "Supplier indicated: product discontinuation",
-  nextExpert: null,
-  questionForExpert: null,
-  counterTerms: null,
-});
+<decision>
+- Price: NEEDS COUNTER - $4.50 is above target $4.00
+- Quantity: ACCEPTABLE - 500 units
+Overall Action: COUNTER
+</decision>
 
-const CLARIFY_DECISION = JSON.stringify({
-  readyToAct: true,
-  action: "clarify",
-  reasoning: "Insufficient data to evaluate - no price provided",
-  nextExpert: null,
-  questionForExpert: null,
-  counterTerms: null,
-});
+<response>
+Thank you for your quote. We were hoping for a price closer to $4.00 per unit for the Bamboo Cutting Board. Could you review your pricing?
+</response>`;
 
-const CLARIFY_EMAIL = JSON.stringify({
-  emailText: "Could you please provide your pricing?",
-  proposedTermsSummary: "Asking for unit price",
-});
+const ESCALATE_AGENT_RESPONSE = `<systematic_evaluation>
+**1. Relevant Rules:**
+ESCALATION: MOQ exceeds 1000 units
+
+**5. Escalation Trigger Check:**
+Trigger: "ESCALATE if MOQ exceeds 1000 units"
+Status: APPLIES - Supplier requires MOQ of 2000 units.
+
+**7. Overall Action:**
+Escalation trigger fired.
+Overall Action: ESCALATE
+</systematic_evaluation>
+
+<decision>
+- Quantity: ESCALATE - MOQ 2000 exceeds 1000 threshold
+Overall Action: ESCALATE
+</decision>
+
+<response>
+ESCALATION NOTICE: The supplier requires a minimum order quantity of 2000 units, which exceeds our maximum acceptable quantity of 1000 units. Merchant review required.
+</response>`;
 
 const baseRequest: AgentProcessRequest = {
   supplierMessage: "Price is $4.50 per unit, MOQ 500, lead time 25-30 days.",
@@ -172,168 +130,92 @@ const baseRequest: AgentProcessRequest = {
 };
 
 describe("AgentPipeline", () => {
-  it("acceptable quote flows through all stages -> action=accept", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: GOOD_EXTRACTION,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: ACCEPT_DECISION,
-    });
+  it("acceptable quote -> action=accept with response text", async () => {
+    const service = createSequentialMockLLMService([RULES_RESPONSE, ACCEPT_AGENT_RESPONSE]);
     const pipeline = new AgentPipeline(service);
 
     const result = await pipeline.process(baseRequest);
 
     expect(result.action).toBe("accept");
-    expect(result.proposedApproval).toBeDefined();
-    expect(result.proposedApproval!.price).toBe(4.5);
-    expect(result.policyEvaluation.complianceStatus).toBe("compliant");
+    expect(result.responseText).toContain("$3.80");
+    expect(result.reasoning).toContain("Relevant Rules");
+    expect(result.decision).toContain("ACCEPT");
   });
 
-  it("price too high -> action=counter with draftEmail", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: GOOD_EXTRACTION,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: COUNTER_DECISION,
-      generate_counter_offer: COUNTER_EMAIL,
-    });
+  it("price too high -> action=counter with response text", async () => {
+    const service = createSequentialMockLLMService([RULES_RESPONSE, COUNTER_AGENT_RESPONSE]);
     const pipeline = new AgentPipeline(service);
 
     const result = await pipeline.process(baseRequest);
 
     expect(result.action).toBe("counter");
-    expect(result.counterOffer).toBeDefined();
-    expect(result.counterOffer!.draftEmail).toContain("$3.80");
+    expect(result.responseText).toContain("$4.00");
+    expect(result.decision).toContain("COUNTER");
   });
 
-  it("extraction fails -> orchestrator sees failure and escalates", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: new Error("All LLM providers failed"),
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: ESCALATE_DECISION,
-    });
+  it("escalation trigger -> action=escalate", async () => {
+    const service = createSequentialMockLLMService([RULES_RESPONSE, ESCALATE_AGENT_RESPONSE]);
     const pipeline = new AgentPipeline(service);
 
     const result = await pipeline.process(baseRequest);
 
     expect(result.action).toBe("escalate");
-    expect(result.escalationReason).toBeTruthy();
+    expect(result.responseText).toContain("ESCALATION");
+    expect(result.reasoning).toContain("MOQ");
   });
 
-  it("low confidence -> orchestrator escalates", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: LOW_CONFIDENCE_EXTRACTION,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: ESCALATE_LOW_CONFIDENCE,
+  it("skips rules generation when cached rules are provided", async () => {
+    // Only one LLM call (agent prompt), no rules generation
+    const service = createSequentialMockLLMService([ACCEPT_AGENT_RESPONSE]);
+    const pipeline = new AgentPipeline(service);
+
+    const result = await pipeline.process({
+      ...baseRequest,
+      cachedOrderContext: "cached context",
+      cachedMerchantRules: "cached rules",
     });
+
+    expect(result.action).toBe("accept");
+    expect(result.orderContext).toBe("cached context");
+    expect(result.merchantRules).toBe("cached rules");
+    expect(service.call).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes 2 LLM calls when rules are not cached", async () => {
+    const service = createSequentialMockLLMService([RULES_RESPONSE, ACCEPT_AGENT_RESPONSE]);
+    const pipeline = new AgentPipeline(service);
+
+    await pipeline.process(baseRequest);
+
+    expect(service.call).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns orderContext and merchantRules for caching", async () => {
+    const service = createSequentialMockLLMService([RULES_RESPONSE, ACCEPT_AGENT_RESPONSE]);
     const pipeline = new AgentPipeline(service);
 
     const result = await pipeline.process(baseRequest);
 
-    expect(result.action).toBe("escalate");
-    expect(result.escalationReason).toContain("confidence");
+    expect(result.orderContext).toContain("Bamboo Cutting Board");
+    expect(result.merchantRules).toContain("PRICING RULES");
   });
 
-  it("discontinuation note -> escalation via LLM experts", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: DISCONTINUED_EXTRACTION,
-      evaluate_escalation: DISCONTINUED_ESCALATION,
-      orchestrate_decision: ESCALATE_DISCONTINUED,
-    });
+  it("returns provider and model info", async () => {
+    const service = createSequentialMockLLMService([RULES_RESPONSE, ACCEPT_AGENT_RESPONSE]);
     const pipeline = new AgentPipeline(service);
 
     const result = await pipeline.process(baseRequest);
 
-    expect(result.action).toBe("escalate");
-    expect(result.escalationReason).toContain("discontinu");
+    expect(result.provider).toBe("claude");
+    expect(result.model).toBe("claude-3-haiku-20240307");
+    expect(result.latencyMs).toBeGreaterThan(0);
+    expect(result.inputTokens).toBeGreaterThan(0);
+    expect(result.outputTokens).toBeGreaterThan(0);
   });
 
-  it("escalation trigger fires -> action=escalate despite good extraction", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: HIGH_MOQ_EXTRACTION,
-      evaluate_escalation: ESCALATION_TRIGGERED,
-      orchestrate_decision: ESCALATE_DECISION,
-    });
-    const pipeline = new AgentPipeline(service);
-
-    const result = await pipeline.process(baseRequest);
-
-    expect(result.action).toBe("escalate");
-    expect(result.escalationReason).toContain("MOQ");
-  });
-
-  it("ambiguous response -> action=clarify with clarificationEmail", async () => {
-    const ambiguousExtraction = JSON.stringify({
-      quotedPrice: null,
-      quotedPriceCurrency: "USD",
-      confidence: 0.4,
-      notes: ["Supplier asked for specifications before quoting"],
-    });
-    const service = createRoutingMockLLMService({
-      extract_quote: ambiguousExtraction,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: CLARIFY_DECISION,
-      generate_clarification: CLARIFY_EMAIL,
-    });
-    const pipeline = new AgentPipeline(service);
-
-    const result = await pipeline.process(baseRequest);
-
-    expect(result.action).toBe("clarify");
-    expect(result.clarificationEmail).toBeTruthy();
-  });
-
-  it("response includes policyEvaluation object for backward compatibility", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: GOOD_EXTRACTION,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: ACCEPT_DECISION,
-    });
-    const pipeline = new AgentPipeline(service);
-
-    const result = await pipeline.process(baseRequest);
-
-    expect(result.policyEvaluation).toBeDefined();
-    expect(result.policyEvaluation.complianceStatus).toBe("compliant");
-    expect(result.policyEvaluation.details).toBeTruthy();
-  });
-
-  it("response includes extractedData from extraction stage", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: GOOD_EXTRACTION,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: ACCEPT_DECISION,
-    });
-    const pipeline = new AgentPipeline(service);
-
-    const result = await pipeline.process(baseRequest);
-
-    expect(result.extractedData).not.toBeNull();
-    expect(result.extractedData!.quotedPrice).toBe(4.5);
-    expect(result.extraction.confidence).toBe(0.95);
-  });
-
-  it("response includes new orchestration observability fields", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: GOOD_EXTRACTION,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: ACCEPT_DECISION,
-    });
-    const pipeline = new AgentPipeline(service);
-
-    const result = await pipeline.process(baseRequest);
-
-    expect(result.expertOpinions).toBeDefined();
-    expect(result.expertOpinions!.length).toBe(2); // extraction + escalation
-    expect(result.orchestratorTrace).toBeDefined();
-    expect(result.orchestratorTrace!.totalIterations).toBe(1);
-    expect(result.totalLLMCalls).toBeGreaterThan(0);
-  });
-
-  it("orchestrator LLM failure -> escalation safety valve", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: GOOD_EXTRACTION,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: new Error("Orchestrator failed"),
-    });
+  it("defaults to escalate when agent output has no valid decision", async () => {
+    const badResponse = "Some malformed output without XML tags";
+    const service = createSequentialMockLLMService([RULES_RESPONSE, badResponse]);
     const pipeline = new AgentPipeline(service);
 
     const result = await pipeline.process(baseRequest);
@@ -341,20 +223,39 @@ describe("AgentPipeline", () => {
     expect(result.action).toBe("escalate");
   });
 
-  it("response generator LLM failure -> escalation fallback in response", async () => {
-    const service = createRoutingMockLLMService({
-      extract_quote: GOOD_EXTRACTION,
-      evaluate_escalation: NO_ESCALATION,
-      orchestrate_decision: COUNTER_DECISION,
-      generate_counter_offer: new Error("Response gen failed"),
-    });
+  it("LLM failure during agent call propagates error", async () => {
+    const service = createSequentialMockLLMService([
+      RULES_RESPONSE,
+      new Error("All LLM providers failed"),
+    ]);
     const pipeline = new AgentPipeline(service);
 
-    const result = await pipeline.process(baseRequest);
+    await expect(pipeline.process(baseRequest)).rejects.toThrow("All LLM providers failed");
+  });
 
-    // Still counter action, but with escalation reason since email gen failed
-    expect(result.action).toBe("counter");
-    expect(result.escalationReason).toContain("failed");
-    expect(result.counterOffer).toBeUndefined();
+  it("generateRules returns parsed order context and merchant rules", async () => {
+    const service = createSequentialMockLLMService([RULES_RESPONSE]);
+    const pipeline = new AgentPipeline(service);
+
+    const result = await pipeline.generateRules(baseRequest.orderInformation);
+
+    expect(result.orderContext).toContain("Bamboo Cutting Board");
+    expect(result.merchantRules).toContain("PRICING RULES");
+    expect(result.provider).toBe("claude");
+  });
+
+  it("generateInitialEmail returns email text and subject line", async () => {
+    const emailResponse = JSON.stringify({
+      emailText: "We are interested in ordering Bamboo Cutting Boards.",
+      subjectLine: "Quote Request - BCB-001",
+    });
+    const service = createSequentialMockLLMService([emailResponse]);
+    const pipeline = new AgentPipeline(service);
+
+    const result = await pipeline.generateInitialEmail(baseRequest.orderInformation);
+
+    expect(result.emailText).toContain("Bamboo Cutting Boards");
+    expect(result.subjectLine).toContain("BCB-001");
+    expect(result.provider).toBe("claude");
   });
 });
