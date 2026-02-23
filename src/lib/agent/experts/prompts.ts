@@ -1,5 +1,5 @@
 import type { LLMRequest } from "../../llm/types";
-import type { ExtractedQuoteData, OrderContext } from "../types";
+import type { ExtractedQuoteData, OrderInformation } from "../types";
 import { RESPONSE_GENERATION_JSON_SCHEMA } from "../types";
 import type { CounterTerms, NeedsAnalysis } from "./types";
 
@@ -51,6 +51,162 @@ export const ORCHESTRATOR_JSON_SCHEMA = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// OrderInformation → Prompt Serialization Helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export function formatOrderInformation(oi: OrderInformation): string {
+  const sections: string[] = [];
+
+  // Product
+  const productLines = [`- Name: ${oi.product.productName} (${oi.product.supplierProductCode})`];
+  productLines.push(`- Merchant SKU: ${oi.product.merchantSKU}`);
+  if (oi.product.unitOfMeasure) productLines.push(`- Unit of Measure: ${oi.product.unitOfMeasure}`);
+  if (oi.product.requiredCertifications?.length) productLines.push(`- Required Certifications: ${oi.product.requiredCertifications.join(", ")}`);
+  if (oi.product.packagingRequirements) productLines.push(`- Packaging: ${oi.product.packagingRequirements}`);
+  if (oi.product.productDescription) productLines.push(`- Description: ${oi.product.productDescription}`);
+  sections.push(`### Product\n${productLines.join("\n")}`);
+
+  // Quantity
+  const qtyLines = [`- Target: ${oi.quantity.targetQuantity} units`];
+  if (oi.quantity.minimumAcceptableQuantity != null) qtyLines.push(`- Minimum Acceptable: ${oi.quantity.minimumAcceptableQuantity} units`);
+  if (oi.quantity.maximumAcceptableQuantity != null) qtyLines.push(`- Maximum Acceptable: ${oi.quantity.maximumAcceptableQuantity} units`);
+  sections.push(`### Quantity\n${qtyLines.join("\n")}`);
+
+  // Pricing Rules
+  const priceLines = [`- Currency: ${oi.pricing.currency}`];
+  priceLines.push(`- Target Price: $${oi.pricing.targetPrice}/unit (ideal — happy at this or below)`);
+  priceLines.push(`- Maximum Acceptable Price: $${oi.pricing.maximumAcceptablePrice}/unit (hard ceiling — escalate if exceeded)`);
+  if (oi.pricing.lastKnownPrice != null) priceLines.push(`- Last Known Price: $${oi.pricing.lastKnownPrice}/unit (reference only)`);
+  if (oi.pricing.neverCounterAbove != null) priceLines.push(`- Never Counter Above: $${oi.pricing.neverCounterAbove}/unit`);
+  sections.push(`### Pricing Rules\n${priceLines.join("\n")}`);
+
+  // Lead Time Rules
+  if (oi.leadTime) {
+    const ltLines: string[] = [];
+    if (oi.leadTime.maximumLeadTimeDays != null) ltLines.push(`- Maximum Acceptable: ${oi.leadTime.maximumLeadTimeDays} days`);
+    if (oi.leadTime.preferredLeadTimeDays != null) ltLines.push(`- Preferred: ${oi.leadTime.preferredLeadTimeDays} days`);
+    if (ltLines.length > 0) sections.push(`### Lead Time Rules\n${ltLines.join("\n")}`);
+  }
+
+  // Payment Terms
+  if (oi.paymentTerms) {
+    const ptLines: string[] = [];
+    if (oi.paymentTerms.requiredTerms) ptLines.push(`- Required: ${oi.paymentTerms.requiredTerms}`);
+    if (oi.paymentTerms.acceptableAlternatives?.length) ptLines.push(`- Acceptable Alternatives: ${oi.paymentTerms.acceptableAlternatives.join(", ")}`);
+    if (oi.paymentTerms.maximumUpfrontPercent != null) ptLines.push(`- Maximum Upfront: ${oi.paymentTerms.maximumUpfrontPercent}%`);
+    if (ptLines.length > 0) sections.push(`### Payment Terms\n${ptLines.join("\n")}`);
+  }
+
+  // Shipping
+  if (oi.shipping) {
+    const shipLines: string[] = [];
+    if (oi.shipping.requiredIncoterms) shipLines.push(`- Required Incoterms: ${oi.shipping.requiredIncoterms}`);
+    if (oi.shipping.originLocation || oi.shipping.destinationLocation) {
+      shipLines.push(`- Origin: ${oi.shipping.originLocation ?? "N/A"} → Destination: ${oi.shipping.destinationLocation ?? "N/A"}`);
+    }
+    if (oi.shipping.preferredMethod) shipLines.push(`- Preferred Method: ${oi.shipping.preferredMethod}`);
+    if (shipLines.length > 0) sections.push(`### Shipping\n${shipLines.join("\n")}`);
+  }
+
+  // Negotiation Behavior
+  if (oi.negotiation) {
+    const negLines: string[] = [];
+    if (oi.negotiation.neverAcceptFirstOffer != null) negLines.push(`- Never Accept First Offer: ${oi.negotiation.neverAcceptFirstOffer}`);
+    if (oi.negotiation.maxNegotiationRounds != null) negLines.push(`- Max Negotiation Rounds: ${oi.negotiation.maxNegotiationRounds}`);
+    if (oi.negotiation.counterPriceStrategy) negLines.push(`- Counter Strategy: ${oi.negotiation.counterPriceStrategy}`);
+    if (oi.negotiation.priorityOrder?.length) negLines.push(`- Priority Order: ${oi.negotiation.priorityOrder.join(" > ")}`);
+    if (negLines.length > 0) sections.push(`### Negotiation Behavior\n${negLines.join("\n")}`);
+  }
+
+  // Escalation Triggers (derived from structured fields + custom)
+  sections.push(`### Escalation Triggers\n${formatEscalationTriggers(oi)}`);
+
+  // Merchant
+  const merchantLines = [`- Company: ${oi.merchant.merchantName}`];
+  merchantLines.push(`- Contact: ${oi.merchant.contactName} (${oi.merchant.contactEmail})`);
+  if (oi.metadata?.poNumber) merchantLines.push(`- PO Number: ${oi.metadata.poNumber}`);
+  if (oi.metadata?.orderType) merchantLines.push(`- Order Type: ${oi.metadata.orderType} (${oi.metadata.urgency ?? "standard"} urgency)`);
+  if (oi.metadata?.orderNotes) merchantLines.push(`- Notes: ${oi.metadata.orderNotes}`);
+  sections.push(`### Merchant\n${merchantLines.join("\n")}`);
+
+  return `## Order Information\n\n${sections.join("\n\n")}`;
+}
+
+export function formatEscalationTriggers(oi: OrderInformation): string {
+  const triggers: string[] = [];
+
+  triggers.push(`- Price exceeds $${oi.pricing.maximumAcceptablePrice}/unit`);
+
+  if (oi.leadTime?.maximumLeadTimeDays != null) {
+    triggers.push(`- Lead time exceeds ${oi.leadTime.maximumLeadTimeDays} days`);
+  }
+
+  if (oi.paymentTerms?.maximumUpfrontPercent != null) {
+    triggers.push(`- Upfront payment exceeds ${oi.paymentTerms.maximumUpfrontPercent}%`);
+  }
+
+  if (oi.quantity.minimumAcceptableQuantity != null) {
+    triggers.push(`- Supplier MOQ exceeds ${oi.quantity.maximumAcceptableQuantity ?? oi.quantity.targetQuantity} units`);
+  }
+
+  if (oi.escalation?.additionalTriggers?.length) {
+    for (const t of oi.escalation.additionalTriggers) {
+      triggers.push(`- ${t}`);
+    }
+  }
+
+  return triggers.join("\n");
+}
+
+export function formatNegotiationRules(oi: OrderInformation): string {
+  const rules: string[] = [];
+
+  // Pricing
+  rules.push(`Target price $${oi.pricing.targetPrice}/unit. Accept at or below $${oi.pricing.maximumAcceptablePrice}/unit.`);
+  if (oi.pricing.neverCounterAbove != null) {
+    rules.push(`Never counter above $${oi.pricing.neverCounterAbove}/unit.`);
+  }
+
+  // Lead time
+  if (oi.leadTime?.maximumLeadTimeDays != null) {
+    let lt = `Maximum lead time ${oi.leadTime.maximumLeadTimeDays} days.`;
+    if (oi.leadTime.preferredLeadTimeDays != null) {
+      lt += ` Prefer ${oi.leadTime.preferredLeadTimeDays} days.`;
+    }
+    rules.push(lt);
+  }
+
+  // Payment
+  if (oi.paymentTerms?.requiredTerms) {
+    let pt = `Required payment terms: ${oi.paymentTerms.requiredTerms}.`;
+    if (oi.paymentTerms.acceptableAlternatives?.length) {
+      pt += ` Accept alternatives: ${oi.paymentTerms.acceptableAlternatives.join(", ")}.`;
+    }
+    rules.push(pt);
+  }
+
+  // Quantity
+  const qtyParts: string[] = [`Target ${oi.quantity.targetQuantity} units.`];
+  if (oi.quantity.minimumAcceptableQuantity != null || oi.quantity.maximumAcceptableQuantity != null) {
+    const min = oi.quantity.minimumAcceptableQuantity ?? 0;
+    const max = oi.quantity.maximumAcceptableQuantity ?? "∞";
+    qtyParts.push(`Acceptable range: ${min}-${max}.`);
+  }
+  rules.push(qtyParts.join(" "));
+
+  // Behavior
+  if (oi.negotiation) {
+    const behav: string[] = [];
+    if (oi.negotiation.neverAcceptFirstOffer) behav.push("Never accept first offer.");
+    if (oi.negotiation.maxNegotiationRounds != null) behav.push(`Max ${oi.negotiation.maxNegotiationRounds} negotiation rounds.`);
+    if (oi.negotiation.counterPriceStrategy) behav.push(`Strategy: ${oi.negotiation.counterPriceStrategy}.`);
+    if (behav.length > 0) rules.push(behav.join(" "));
+  }
+
+  return rules.join("\n");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Escalation Expert Prompt
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -81,9 +237,8 @@ Severity levels:
 
 export function buildEscalationPrompt(
   supplierMessage: string,
-  escalationTriggers: string,
+  orderInformation: OrderInformation,
   extractedData?: ExtractedQuoteData,
-  orderContext?: { skuName: string; supplierSku: string },
   conversationHistory?: string,
   additionalQuestion?: string
 ): LLMRequest {
@@ -99,11 +254,9 @@ export function buildEscalationPrompt(
     userMessage += `## Extracted Data\n${formatExtractedData(extractedData)}\n\n`;
   }
 
-  if (orderContext) {
-    userMessage += `## Product\n${orderContext.skuName} (${orderContext.supplierSku})\n\n`;
-  }
+  userMessage += `## Product\n${orderInformation.product.productName} (${orderInformation.product.supplierProductCode})\n\n`;
 
-  userMessage += `## Escalation Triggers to Evaluate\n${escalationTriggers || "(No triggers provided)"}`;
+  userMessage += `## Escalation Triggers to Evaluate\n${formatEscalationTriggers(orderInformation)}`;
 
   if (additionalQuestion) {
     userMessage += `\n\n## Additional Question from Orchestrator\n${additionalQuestion}`;
@@ -146,8 +299,7 @@ Rules:
 
 export function buildNeedsPrompt(
   extractedData: ExtractedQuoteData | null,
-  negotiationRules: string,
-  orderContext: { skuName: string; supplierSku: string; quantityRequested: string },
+  orderInformation: OrderInformation,
   conversationHistory?: string,
   additionalQuestion?: string
 ): LLMRequest {
@@ -158,8 +310,8 @@ export function buildNeedsPrompt(
   }
 
   userMessage += `## Extracted Data\n${extractedData ? formatExtractedData(extractedData) : "No data extracted (extraction failed or no pricing found)"}\n\n`;
-  userMessage += `## Merchant's Negotiation Rules\n${negotiationRules || "(No rules provided)"}\n\n`;
-  userMessage += `## Order Context\nProduct: ${orderContext.skuName} (${orderContext.supplierSku})\nQuantity: ${orderContext.quantityRequested}`;
+  userMessage += `## Merchant's Negotiation Rules\n${formatNegotiationRules(orderInformation)}\n\n`;
+  userMessage += `## Order Context\nProduct: ${orderInformation.product.productName} (${orderInformation.product.supplierProductCode})\nQuantity: ${orderInformation.quantity.targetQuantity}`;
 
   if (additionalQuestion) {
     userMessage += `\n\n## Additional Question from Orchestrator\n${additionalQuestion}`;
@@ -182,9 +334,23 @@ export function buildNeedsPrompt(
 // Orchestrator Prompt
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const ORCHESTRATOR_SYSTEM_PROMPT = `You are the decision-making orchestrator for a purchase order negotiation system.
+const ORCHESTRATOR_SYSTEM_PROMPT = `You are the decision-making orchestrator for a purchase order negotiation system. You act on behalf of a MERCHANT who is BUYING goods from a supplier.
 
 You receive expert opinions from specialized analysts and must decide the next action. You have the FULL picture — all expert opinions, the merchant's rules, triggers, and order context.
+
+## CRITICAL: You Represent the Buyer
+
+The merchant is the BUYER. The goal is always to get the BEST deal for the merchant:
+- **Lower prices are ALWAYS better.** A price below the target is a win, not a problem.
+- **NEVER counter to increase a price.** If the supplier offers $11.50 and the target is $12.00, that is a GOOD deal — accept it. Do NOT counter with $12.00.
+- **NEVER negotiate for worse terms.** If the supplier offers better terms than the merchant's rules require, that is favorable — accept it.
+- **Only counter to IMPROVE terms for the merchant** — lower prices, shorter lead times, better payment terms, lower MOQs.
+
+When evaluating rules like "target price $12, acceptable up to $13":
+- $11.50 from the supplier = BELOW target = ACCEPT (great deal)
+- $12.50 from the supplier = above target but within acceptable = ACCEPT
+- $14.00 from the supplier = above acceptable range = COUNTER down
+- "Target" means "we'd be happy at this price or lower" — it is NOT a minimum.
 
 ## Your Decision Process
 
@@ -195,18 +361,27 @@ You receive expert opinions from specialized analysts and must decide the next a
 
 ## Actions
 
-- **accept**: The quote meets ALL merchant rules, no escalation triggers fired, and sufficient data is available. You MUST have price data to accept.
-- **counter**: The quote is negotiable but terms need improvement. Provide counterTerms with specific targets.
+- **accept**: EVERY rule the merchant specified is satisfied — no exceptions. No escalation triggers fired. Sufficient data is available. You MUST have price data to accept. If the price is at or below the merchant's target/acceptable range, that rule is satisfied — do not counter for a higher price.
+- **counter**: One or more merchant rules are violated. The quote is negotiable — counter to push for BETTER terms (lower price, shorter lead time, etc.). Never counter to worsen the merchant's position.
 - **escalate**: An escalation trigger has fired, OR the situation is too complex/risky for automated handling. Include the reason.
 - **clarify**: Insufficient data to evaluate — need more information from the supplier. Only if extraction confidence is moderate and key fields are missing.
+
+## CRITICAL: Rules Are Not Suggestions
+
+The merchant's rules are hard requirements. If a rule says "lead time must be under 35 days" and the supplier quotes 40 days, that rule is VIOLATED — you MUST counter, even if everything else looks great. You do not get to decide that a rule violation is "minor" or a "reasonable trade-off." The merchant set the rules; you enforce them.
+
+- "must be under X" = hard limit, counter if exceeded
+- "acceptable up to X" = hard limit, counter if exceeded
+- "prefer X" = soft preference, acceptable if close
+- Only words like "prefer", "ideally", "if possible" indicate flexibility. Words like "must", "required", "under", "maximum" are absolute.
 
 ## Priority Rules
 
 1. **Escalation triggers take priority.** If the escalation expert says a trigger fired, escalate — do not override with accept or counter.
 2. **Extraction failure → escalate.** If extraction failed entirely (success=false), escalate.
 3. **Very low confidence → consider escalate or clarify.** If confidence < 0.3, the data is unreliable.
-4. **Check rules for accept.** Only accept if ALL rules are clearly satisfied.
-5. **Counter when negotiable.** If the quote is close but violates a rule, counter with specific terms.
+4. **ALL rules satisfied → accept.** Only accept if EVERY merchant rule is met. One violated rule = do not accept.
+5. **Any rule violated → counter.** If even one rule is broken (price too high, lead time too long, MOQ too high), counter to fix it — even if the other terms are excellent.
 6. **Clarify when data gaps prevent evaluation.** If you can't tell whether rules are satisfied because data is missing.
 
 ## Re-consultation
@@ -229,8 +404,8 @@ If conversation history is provided, use it to understand the negotiation stage:
 
 ## Counter Terms
 
-When countering, provide specific counterTerms:
-- targetPrice: the price to propose (if the issue is price)
+When countering, provide specific counterTerms to IMPROVE the deal for the merchant:
+- targetPrice: a LOWER price to propose (never higher than what the supplier offered)
 - targetQuantity: the quantity to propose (if relevant)
 - otherTerms: any other terms to negotiate (free text)
 
@@ -238,11 +413,11 @@ Do NOT reveal the merchant's acceptable range — only propose a specific target
 
 export function buildOrchestratorPrompt(
   supplierMessage: string,
-  orderContext: OrderContext,
-  classifiedInstructions: { negotiationRules: string; escalationTriggers: string; specialInstructions: string },
+  orderInformation: OrderInformation,
   expertOpinions: Array<{ expertName: string; analysis: unknown }>,
   conversationHistory?: string,
-  priorDecisions?: Array<{ reasoning: string; nextExpert?: string | null; questionForExpert?: string | null }>
+  priorDecisions?: Array<{ reasoning: string; nextExpert?: string | null; questionForExpert?: string | null }>,
+  turnNumber?: number
 ): LLMRequest {
   let userMessage = "";
 
@@ -252,17 +427,18 @@ export function buildOrchestratorPrompt(
 
   userMessage += `## Supplier's Latest Message\n---\n${supplierMessage}\n---\n\n`;
 
-  userMessage += `## Order Context\n`;
-  userMessage += `Product: ${orderContext.skuName} (${orderContext.supplierSku})\n`;
-  userMessage += `Quantity Requested: ${orderContext.quantityRequested}\n`;
-  userMessage += `Last Known Price: $${orderContext.lastKnownPrice}\n`;
-  if (orderContext.specialInstructions) {
-    userMessage += `Special Instructions: ${orderContext.specialInstructions}\n`;
-  }
-  userMessage += `\n`;
+  userMessage += formatOrderInformation(orderInformation);
+  userMessage += `\n\n`;
 
-  userMessage += `## Merchant's Negotiation Rules\n${classifiedInstructions.negotiationRules || "(No rules provided — use best judgment)"}\n\n`;
-  userMessage += `## Merchant's Escalation Triggers\n${classifiedInstructions.escalationTriggers || "(No triggers provided)"}\n\n`;
+  userMessage += `## Merchant's Negotiation Rules\n${formatNegotiationRules(orderInformation)}\n\n`;
+
+  if (turnNumber != null) {
+    userMessage += `## Turn Number: ${turnNumber}\n`;
+    if (orderInformation.negotiation?.neverAcceptFirstOffer && turnNumber <= 1) {
+      userMessage += `NOTE: The merchant requires never accepting the first offer. This is turn ${turnNumber}.\n`;
+    }
+    userMessage += `\n`;
+  }
 
   userMessage += `## Expert Opinions\n\n`;
   for (const opinion of expertOpinions) {
@@ -335,9 +511,8 @@ export function buildCounterOfferCrafterPrompt(
   extractedData: ExtractedQuoteData,
   reasoning: string,
   counterTerms: CounterTerms,
-  orderContext: OrderContext,
-  conversationHistory?: string,
-  specialInstructions?: string
+  orderInformation: OrderInformation,
+  conversationHistory?: string
 ): LLMRequest {
   const termsLines: string[] = [];
   if (counterTerms.targetPrice) termsLines.push(`Target price: $${counterTerms.targetPrice} per unit`);
@@ -353,10 +528,13 @@ export function buildCounterOfferCrafterPrompt(
   userMessage += `## Supplier's Quote\n${formatExtractedData(extractedData)}\n\n`;
   userMessage += `## Why We're Countering\n${reasoning}\n\n`;
   userMessage += `## Counter Terms\n${termsLines.length > 0 ? termsLines.join("\n") : "Negotiate for better terms based on the reasoning above."}\n\n`;
-  userMessage += `## Order Context\n${formatOrderContext(orderContext)}`;
+  userMessage += `## Order Context\nProduct: ${orderInformation.product.productName} (${orderInformation.product.supplierProductCode})\nQuantity: ${orderInformation.quantity.targetQuantity}\nLast Known Price: $${orderInformation.pricing.lastKnownPrice ?? "N/A"}`;
 
-  if (specialInstructions) {
-    userMessage += `\n\n## Special Instructions\n${specialInstructions}`;
+  if (orderInformation.product.packagingRequirements || orderInformation.metadata?.orderNotes) {
+    const extras: string[] = [];
+    if (orderInformation.product.packagingRequirements) extras.push(`Packaging: ${orderInformation.product.packagingRequirements}`);
+    if (orderInformation.metadata?.orderNotes) extras.push(`Notes: ${orderInformation.metadata.orderNotes}`);
+    userMessage += `\n${extras.join("\n")}`;
   }
 
   return {
@@ -375,10 +553,9 @@ export function buildCounterOfferCrafterPrompt(
 export function buildClarificationCrafterPrompt(
   extractedData: ExtractedQuoteData | null,
   reasoning: string,
-  orderContext: OrderContext,
+  orderInformation: OrderInformation,
   needsAnalysis?: NeedsAnalysis,
-  conversationHistory?: string,
-  specialInstructions?: string
+  conversationHistory?: string
 ): LLMRequest {
   let userMessage = "";
 
@@ -400,10 +577,13 @@ export function buildClarificationCrafterPrompt(
     userMessage += `## Why We Need Clarification\n${reasoning}\n\n`;
   }
 
-  userMessage += `## Order Context\n${formatOrderContext(orderContext)}`;
+  userMessage += `## Order Context\nProduct: ${orderInformation.product.productName} (${orderInformation.product.supplierProductCode})\nQuantity: ${orderInformation.quantity.targetQuantity}\nLast Known Price: $${orderInformation.pricing.lastKnownPrice ?? "N/A"}`;
 
-  if (specialInstructions) {
-    userMessage += `\n\n## Special Instructions\n${specialInstructions}`;
+  if (orderInformation.product.packagingRequirements || orderInformation.metadata?.orderNotes) {
+    const extras: string[] = [];
+    if (orderInformation.product.packagingRequirements) extras.push(`Packaging: ${orderInformation.product.packagingRequirements}`);
+    if (orderInformation.metadata?.orderNotes) extras.push(`Notes: ${orderInformation.metadata.orderNotes}`);
+    userMessage += `\n${extras.join("\n")}`;
   }
 
   return {
@@ -433,17 +613,5 @@ function formatExtractedData(data: ExtractedQuoteData): string {
     `Payment Terms: ${data.paymentTerms ?? "not specified"}`,
     `Validity Period: ${data.validityPeriod ?? "not specified"}`,
   ];
-  return lines.join("\n");
-}
-
-function formatOrderContext(ctx: OrderContext): string {
-  const lines = [
-    `SKU: ${ctx.skuName} (${ctx.supplierSku})`,
-    `Quantity Requested: ${ctx.quantityRequested}`,
-    `Last Known Price: $${ctx.lastKnownPrice}`,
-  ];
-  if (ctx.specialInstructions) {
-    lines.push(`Special Instructions: ${ctx.specialInstructions}`);
-  }
   return lines.join("\n");
 }

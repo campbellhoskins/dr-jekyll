@@ -1,62 +1,11 @@
 import type { LLMRequest } from "../llm/types";
-import type { ExtractedQuoteData, OrderContext } from "./types";
+import type { ExtractedQuoteData, OrderInformation } from "./types";
 import {
   EXTRACTION_JSON_SCHEMA,
   POLICY_DECISION_JSON_SCHEMA,
   RESPONSE_GENERATION_JSON_SCHEMA,
-  INSTRUCTION_CLASSIFICATION_JSON_SCHEMA,
 } from "./types";
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Instruction Classification (single merchant input → rules/triggers/instructions)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const INSTRUCTION_CLASSIFICATION_SYSTEM_PROMPT = `You are classifying a merchant's free-form instructions into three categories for a purchase order negotiation system.
-
-Given a single block of text from a merchant, classify each part into:
-
-1. **negotiationRules** — How to evaluate and negotiate the supplier's quote. Anything about:
-   - Acceptable price ranges or target prices
-   - Preferred payment terms
-   - Lead time requirements
-   - Quantity preferences
-   - Volume discount expectations
-   - Any "if X then Y" logic about how to respond to quotes
-
-2. **escalationTriggers** — When to STOP negotiating and alert the merchant. Hard limits or deal-breakers:
-   - Maximum prices that should never be accepted
-   - Product discontinuation or unavailability
-   - Unacceptable terms (e.g., "if they require full prepayment, let me know")
-   - Anything the merchant wants to be personally notified about
-
-3. **specialInstructions** — Product specs, preferences, or requirements to communicate to the supplier:
-   - Colors, sizes, materials, packaging
-   - Shipping preferences
-   - Custom requirements (logo, engraving, etc.)
-   - Delivery timeline preferences
-
-Rules:
-- A single sentence can belong to multiple categories. For example "I want blue shoes at $40 max" has specialInstructions ("blue shoes") AND negotiationRules ("$40 max").
-- If a category has no relevant content, return an empty string for it.
-- Preserve the merchant's original wording as much as possible — rephrase only for clarity.
-- Do not invent rules or triggers the merchant didn't mention.`;
-
-export function buildInstructionClassificationPrompt(
-  merchantInstructions: string,
-  orderContext: OrderContext
-): LLMRequest {
-  return {
-    systemPrompt: INSTRUCTION_CLASSIFICATION_SYSTEM_PROMPT,
-    userMessage: `## Merchant's Instructions\n${merchantInstructions}\n\n## Order Context\nProduct: ${orderContext.skuName}\nQuantity: ${orderContext.quantityRequested}\nLast Known Price: $${orderContext.lastKnownPrice}`,
-    maxTokens: 1024,
-    temperature: 0,
-    outputSchema: {
-      name: "classify_instructions",
-      description: "Classify merchant instructions into negotiation rules, escalation triggers, and special instructions",
-      schema: INSTRUCTION_CLASSIFICATION_JSON_SCHEMA,
-    },
-  };
-}
+import { formatNegotiationRules, formatEscalationTriggers } from "./experts/prompts";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Initial Outbound Email Generation
@@ -81,27 +30,30 @@ Return ONLY valid JSON with:
 - emailText: string — the email body text only
 - subjectLine: string — a short professional subject line`;
 
-const INITIAL_EMAIL_RESPONSE_SCHEMA = `{
-  "emailText": "string",
-  "subjectLine": "string"
-}`;
-
-export function buildInitialEmailPrompt(orderContext: OrderContext): LLMRequest {
-  const style = orderContext.negotiationStyle ?? "ask_for_quote";
-  const approach = style === "state_price_upfront"
-    ? `State your target price of $${orderContext.lastKnownPrice} per unit upfront and ask if they can match it.`
-    : `Ask the supplier for their best price and terms. Do NOT mention any target price.`;
-
+export function buildInitialEmailPrompt(orderInformation: OrderInformation): LLMRequest {
   const lines = [
     `## Negotiation Approach`,
-    approach,
+    `Ask the supplier for their best price and terms. Do NOT mention any target price.`,
     ``,
     `## Order Details`,
-    `Product: ${orderContext.skuName} (${orderContext.supplierSku})`,
-    `Quantity: ${orderContext.quantityRequested}`,
+    `Product: ${orderInformation.product.productName} (${orderInformation.product.supplierProductCode})`,
+    `Quantity: ${orderInformation.quantity.targetQuantity}`,
   ];
-  if (orderContext.specialInstructions) {
-    lines.push(`Special Requirements: ${orderContext.specialInstructions}`);
+
+  if (orderInformation.product.packagingRequirements) {
+    lines.push(`Packaging: ${orderInformation.product.packagingRequirements}`);
+  }
+  if (orderInformation.product.requiredCertifications?.length) {
+    lines.push(`Required Certifications: ${orderInformation.product.requiredCertifications.join(", ")}`);
+  }
+  if (orderInformation.shipping?.requiredIncoterms) {
+    lines.push(`Shipping: ${orderInformation.shipping.requiredIncoterms}`);
+  }
+  if (orderInformation.shipping?.destinationLocation) {
+    lines.push(`Destination: ${orderInformation.shipping.destinationLocation}`);
+  }
+  if (orderInformation.metadata?.orderNotes) {
+    lines.push(`Special Requirements: ${orderInformation.metadata.orderNotes}`);
   }
 
   return {
@@ -227,23 +179,9 @@ function formatExtractedData(data: ExtractedQuoteData): string {
   return lines.join("\n");
 }
 
-function formatOrderContext(ctx: OrderContext): string {
-  const lines = [
-    `SKU: ${ctx.skuName} (${ctx.supplierSku})`,
-    `Quantity Requested: ${ctx.quantityRequested}`,
-    `Last Known Price: $${ctx.lastKnownPrice}`,
-  ];
-  if (ctx.specialInstructions) {
-    lines.push(`Special Instructions: ${ctx.specialInstructions}`);
-  }
-  return lines.join("\n");
-}
-
 export function buildPolicyDecisionPrompt(
   extractedData: ExtractedQuoteData,
-  negotiationRules: string,
-  escalationTriggers: string,
-  orderContext: OrderContext,
+  orderInformation: OrderInformation,
   conversationHistory?: string
 ): LLMRequest {
   let userMessage = "";
@@ -256,13 +194,15 @@ export function buildPolicyDecisionPrompt(
 ${formatExtractedData(extractedData)}
 
 ## Merchant's Negotiation Rules
-${negotiationRules || "(No rules provided — use best judgment)"}
+${formatNegotiationRules(orderInformation)}
 
 ## Merchant's Escalation Triggers
-${escalationTriggers || "(No escalation triggers provided)"}
+${formatEscalationTriggers(orderInformation)}
 
 ## Order Context
-${formatOrderContext(orderContext)}`;
+Product: ${orderInformation.product.productName} (${orderInformation.product.supplierProductCode})
+Quantity: ${orderInformation.quantity.targetQuantity}
+Last Known Price: $${orderInformation.pricing.lastKnownPrice ?? "N/A"}`;
 
   return {
     systemPrompt: POLICY_DECISION_SYSTEM_PROMPT,
@@ -305,7 +245,7 @@ export function buildCounterOfferPrompt(
   extractedData: ExtractedQuoteData,
   reasoning: string,
   counterTerms: { targetPrice?: number; targetQuantity?: number; otherTerms?: string },
-  orderContext: OrderContext
+  orderInformation: OrderInformation
 ): LLMRequest {
   const termsLines: string[] = [];
   if (counterTerms.targetPrice) termsLines.push(`Target price: $${counterTerms.targetPrice} per unit`);
@@ -322,7 +262,9 @@ ${reasoning}
 ${termsLines.length > 0 ? termsLines.join("\n") : "Negotiate for better terms based on the reasoning above."}
 
 ## Order Context
-${formatOrderContext(orderContext)}`;
+Product: ${orderInformation.product.productName} (${orderInformation.product.supplierProductCode})
+Quantity: ${orderInformation.quantity.targetQuantity}
+Last Known Price: $${orderInformation.pricing.lastKnownPrice ?? "N/A"}`;
 
   return {
     systemPrompt: COUNTER_OFFER_SYSTEM_PROMPT,
@@ -357,7 +299,7 @@ Return ONLY valid JSON with:
 export function buildClarificationPrompt(
   extractedData: ExtractedQuoteData,
   notes: string[],
-  orderContext: OrderContext
+  orderInformation: OrderInformation
 ): LLMRequest {
   const nullFields: string[] = [];
   if (extractedData.quotedPrice === null) nullFields.push("unit price");
@@ -375,7 +317,9 @@ ${nullFields.length > 0 ? `Missing fields: ${nullFields.join(", ")}` : "No speci
 ${notes.length > 0 ? notes.join("\n") : "No additional notes."}
 
 ## Order Context
-${formatOrderContext(orderContext)}`;
+Product: ${orderInformation.product.productName} (${orderInformation.product.supplierProductCode})
+Quantity: ${orderInformation.quantity.targetQuantity}
+Last Known Price: $${orderInformation.pricing.lastKnownPrice ?? "N/A"}`;
 
   return {
     systemPrompt: CLARIFICATION_SYSTEM_PROMPT,

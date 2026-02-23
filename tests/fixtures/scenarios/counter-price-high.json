@@ -2,13 +2,15 @@
   "name": "counter-price-too-high",
   "description": "Supplier quotes above target price but within negotiable range — should counter",
   "supplierMessage": "Dear valued customer,\n\nThank you for your order inquiry. Our best price would be $4.80 per unit for 500 pieces, with 30 day lead time.\n\nPayment terms: 30% deposit, balance before shipping.\nShipping: FOB Shenzhen.\n\nKind regards,\nMei Lin",
-  "negotiationRules": "Target price is $3.80 per unit. Acceptable range is $3.50 - $4.20 per unit. Ask for discount if ordering more than 500 units. Prefer 30-day payment terms. Always confirm lead time before agreeing.",
-  "escalationTriggers": "Escalate if quoted price exceeds $5.50 per unit. Escalate if lead time exceeds 45 days. Escalate if MOQ is higher than 1000 units.",
-  "orderContext": {
-    "skuName": "LED Desk Lamp",
-    "supplierSku": "LDL-200",
-    "quantityRequested": "500",
-    "lastKnownPrice": 3.80
+  "orderInformation": {
+    "merchant": { "merchantId": "m1", "merchantName": "Test Merchant", "contactName": "Test Contact", "contactEmail": "test@testmerchant.com" },
+    "supplier": { "supplierName": "LED Supplier Co", "supplierContactName": "Mei Lin", "relationshipTier": "standard" },
+    "product": { "merchantSKU": "LDL-200", "supplierProductCode": "LDL-200", "productName": "LED Desk Lamp" },
+    "pricing": { "currency": "USD", "targetPrice": 3.80, "maximumAcceptablePrice": 4.20, "lastKnownPrice": 3.80 },
+    "quantity": { "targetQuantity": 500, "maximumAcceptableQuantity": 1000 },
+    "leadTime": { "maximumLeadTimeDays": 45 },
+    "paymentTerms": { "requiredTerms": "Net 30" },
+    "escalation": { "additionalTriggers": ["Escalate if quoted price exceeds $5.50 per unit"] }
   },
   "expectedAction": "counter",
   "expectedComplianceStatus": "non_compliant"

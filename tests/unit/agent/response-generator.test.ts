@@ -3,9 +3,9 @@ import type { LLMService, LLMServiceResult } from "@/lib/llm/service";
 import type { LLMRequest } from "@/lib/llm/types";
 import type {
   ExtractedQuoteData,
-  OrderContext,
   PolicyEvaluationResult,
 } from "@/lib/agent/types";
+import { buildTestOrderInformation } from "../../helpers/order-information";
 
 function createMockLLMService(
   impl?: (req: LLMRequest) => Promise<LLMServiceResult>
@@ -42,12 +42,11 @@ const sampleData: ExtractedQuoteData = {
   rawExtractionJson: {},
 };
 
-const sampleContext: OrderContext = {
-  skuName: "LED Desk Lamp",
-  supplierSku: "LDL-200",
-  quantityRequested: "500",
-  lastKnownPrice: 3.8,
-};
+const sampleOrderInformation = buildTestOrderInformation({
+  product: { productName: "LED Desk Lamp", supplierProductCode: "LDL-200", merchantSKU: "LDL-200" },
+  pricing: { targetPrice: 3.80, maximumAcceptablePrice: 4.20, lastKnownPrice: 3.80 },
+  quantity: { targetQuantity: 500 },
+});
 
 const samplePolicyEval: PolicyEvaluationResult = {
   rulesMatched: ["price range"],
@@ -59,6 +58,8 @@ const samplePolicyEval: PolicyEvaluationResult = {
   provider: "claude",
   model: "m",
   latencyMs: 300,
+  inputTokens: 200,
+  outputTokens: 100,
 };
 
 describe("ResponseGenerator", () => {
@@ -70,7 +71,7 @@ describe("ResponseGenerator", () => {
       "accept",
       sampleData,
       samplePolicyEval,
-      sampleContext,
+      sampleOrderInformation,
       "All rules satisfied"
     );
 
@@ -88,7 +89,7 @@ describe("ResponseGenerator", () => {
       "accept",
       sampleData,
       samplePolicyEval,
-      sampleContext,
+      sampleOrderInformation,
       "All rules satisfied"
     );
 
@@ -104,7 +105,7 @@ describe("ResponseGenerator", () => {
       "counter",
       sampleData,
       samplePolicyEval,
-      sampleContext,
+      sampleOrderInformation,
       "Price too high"
     );
 
@@ -131,7 +132,7 @@ describe("ResponseGenerator", () => {
       "clarify",
       sampleData,
       null,
-      sampleContext,
+      sampleOrderInformation,
       "Need pricing info"
     );
 
@@ -148,7 +149,7 @@ describe("ResponseGenerator", () => {
       "escalate",
       sampleData,
       samplePolicyEval,
-      sampleContext,
+      sampleOrderInformation,
       "MOQ too high"
     );
 
@@ -166,7 +167,7 @@ describe("ResponseGenerator", () => {
       "counter",
       sampleData,
       samplePolicyEval,
-      sampleContext,
+      sampleOrderInformation,
       "Price too high"
     );
 
@@ -183,7 +184,7 @@ describe("ResponseGenerator", () => {
       "accept",
       dataNoQty,
       samplePolicyEval,
-      sampleContext,
+      sampleOrderInformation,
       "OK"
     );
 
@@ -194,8 +195,8 @@ describe("ResponseGenerator", () => {
     const service = createMockLLMService();
     const generator = new ResponseGenerator(service);
 
-    await generator.generate("accept", sampleData, samplePolicyEval, sampleContext, "OK");
-    await generator.generate("escalate", sampleData, samplePolicyEval, sampleContext, "Problem");
+    await generator.generate("accept", sampleData, samplePolicyEval, sampleOrderInformation, "OK");
+    await generator.generate("escalate", sampleData, samplePolicyEval, sampleOrderInformation, "Problem");
 
     expect(service.call).not.toHaveBeenCalled();
   });

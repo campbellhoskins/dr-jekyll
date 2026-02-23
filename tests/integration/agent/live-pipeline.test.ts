@@ -3,22 +3,14 @@ import * as path from "path";
 import { LLMService } from "@/lib/llm/service";
 import { ClaudeProvider } from "@/lib/llm/providers/claude";
 import { AgentPipeline } from "@/lib/agent/pipeline";
-import type { AgentProcessRequest } from "@/lib/agent/types";
+import type { AgentProcessRequest, OrderInformation } from "@/lib/agent/types";
 
 const SCENARIOS_DIR = path.resolve(__dirname, "../../fixtures/scenarios");
 
 interface ScenarioFile {
   name: string;
   supplierMessage: string;
-  negotiationRules: string;
-  escalationTriggers: string;
-  orderContext: {
-    skuName: string;
-    supplierSku: string;
-    quantityRequested: string;
-    lastKnownPrice: number;
-    specialInstructions?: string;
-  };
+  orderInformation: OrderInformation;
   expectedAction: string;
 }
 
@@ -37,7 +29,7 @@ describeOrSkip("Live pipeline tests", () => {
   beforeAll(() => {
     const provider = new ClaudeProvider(
       apiKey!,
-      process.env.LLM_PRIMARY_MODEL ?? "claude-3-haiku-20240307"
+      process.env.LLM_TEST_MODEL ?? "claude-3-haiku-20240307"
     );
     const service = new LLMService({
       primaryProvider: provider,
@@ -50,9 +42,7 @@ describeOrSkip("Live pipeline tests", () => {
   function buildRequest(scenario: ScenarioFile): AgentProcessRequest {
     return {
       supplierMessage: scenario.supplierMessage,
-      negotiationRules: scenario.negotiationRules,
-      escalationTriggers: scenario.escalationTriggers,
-      orderContext: scenario.orderContext,
+      orderInformation: scenario.orderInformation,
     };
   }
 

@@ -7,9 +7,9 @@ import { ClaudeProvider } from "../lib/llm/providers/claude";
 import { OpenAIProvider } from "../lib/llm/providers/openai";
 import { AgentPipeline } from "../lib/agent/pipeline";
 import { ConversationContext } from "../lib/agent/conversation-context";
-import type { AgentProcessRequest, AgentProcessResponse, OrderContext } from "../lib/agent/types";
+import type { AgentProcessRequest, AgentProcessResponse, OrderInformation } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
-import { printExpertOpinion, printOrchestratorTrace, printResponse, printTotals } from "./display";
+import { printInputContext, printExpertOpinionWithContext, printOrchestratorTrace, printResponse, printTotals } from "./display";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -20,7 +20,7 @@ const scenarioPath = scenarioIndex !== -1 ? args[scenarioIndex + 1] : null;
 function buildLLMService(): LLMService {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
-  const primaryModel = process.env.LLM_PRIMARY_MODEL ?? "claude-3-haiku-20240307";
+  const primaryModel = process.env.LLM_CLI_MODEL ?? "claude-3-haiku-20240307";
   const fallbackModel = process.env.LLM_FALLBACK_MODEL ?? "gpt-4o";
   const maxRetries = parseInt(process.env.LLM_MAX_RETRIES ?? "3", 10);
 
@@ -37,19 +37,13 @@ function buildLLMService(): LLMService {
 }
 
 interface SessionConfig {
-  merchantInstructions: string;
-  negotiationRules: string;
-  escalationTriggers: string;
-  orderContext: OrderContext;
+  orderInformation: OrderInformation;
 }
 
 function loadScenarioConfig(filePath: string): SessionConfig {
   const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
   return {
-    merchantInstructions: data.merchantInstructions ?? "",
-    negotiationRules: data.negotiationRules ?? "",
-    escalationTriggers: data.escalationTriggers ?? "",
-    orderContext: data.orderContext,
+    orderInformation: data.orderInformation,
   };
 }
 
@@ -61,52 +55,81 @@ function promptForConfig(rl: readline.Interface): Promise<SessionConfig> {
     (async () => {
       console.log("\n-- Session Setup --\n");
 
-      const skuName = await ask("  SKU name: ");
+      const productName = await ask("  Product name: ");
       const supplierSku = await ask("  Supplier SKU: ");
-      const qty = await ask("  Quantity requested: ");
-      const lastPrice = await ask("  Last known price ($): ");
+      const qty = await ask("  Target quantity: ");
+      const targetPrice = await ask("  Target price ($): ");
+      const maxPrice = await ask("  Maximum acceptable price ($): ");
+      const lastPrice = await ask("  Last known price ($) [optional]: ");
 
       console.log("");
-      const styleInput = await ask("  Negotiation style (1=ask for quote, 2=state price upfront) [1]: ");
-      console.log("");
-      console.log("  Provide any instructions, preferences, rules, or limits.");
-      console.log("  Examples: 'I want blue shoes at $40. Don't go above $50.'");
-      const merchantInstructions = await ask("  Instructions:\n  > ");
+      const maxLeadTime = await ask("  Max lead time (days) [optional]: ");
+      const paymentTerms = await ask("  Required payment terms [optional]: ");
+      const notes = await ask("  Any special notes [optional]: ");
 
-      resolve({
-        merchantInstructions,
-        negotiationRules: "",
-        escalationTriggers: "",
-        orderContext: {
-          skuName,
-          supplierSku,
-          quantityRequested: qty,
-          lastKnownPrice: parseFloat(lastPrice) || 0,
-          negotiationStyle: styleInput === "2" ? "state_price_upfront" : "ask_for_quote",
+      const orderInformation: OrderInformation = {
+        merchant: {
+          merchantId: "interactive",
+          merchantName: "Interactive User",
+          contactName: "User",
+          contactEmail: "user@example.com",
         },
-      });
+        supplier: {
+          supplierName: "Supplier",
+        },
+        product: {
+          merchantSKU: supplierSku,
+          supplierProductCode: supplierSku,
+          productName,
+        },
+        pricing: {
+          currency: "USD",
+          targetPrice: parseFloat(targetPrice) || 0,
+          maximumAcceptablePrice: parseFloat(maxPrice) || 0,
+          lastKnownPrice: lastPrice ? parseFloat(lastPrice) : undefined,
+        },
+        quantity: {
+          targetQuantity: parseInt(qty, 10) || 0,
+        },
+      };
+
+      if (maxLeadTime) {
+        orderInformation.leadTime = { maximumLeadTimeDays: parseInt(maxLeadTime, 10) };
+      }
+      if (paymentTerms) {
+        orderInformation.paymentTerms = { requiredTerms: paymentTerms };
+      }
+      if (notes) {
+        orderInformation.metadata = { orderNotes: notes };
+      }
+
+      resolve({ orderInformation });
     })();
   });
 }
 
-function printResult(result: AgentProcessResponse, turn: number): void {
+function printResult(result: AgentProcessResponse, request: AgentProcessRequest, turn: number): void {
   console.log(`\n${"=".repeat(60)}`);
   console.log(`  TURN ${turn} -- PIPELINE RESULT`);
   console.log(`${"=".repeat(60)}`);
+
+  // Full input context
+  console.log(`\n-- INPUT CONTEXT --`);
+  printInputContext(request, "  ");
 
   // Initial expert opinions (parallel fan-out)
   if (result.expertOpinions) {
     console.log(`\n-- PARALLEL EXPERT FAN-OUT --`);
     for (const opinion of result.expertOpinions.slice(0, 2)) {
       console.log(`\n  [${opinion.expertName.toUpperCase()}]`);
-      printExpertOpinion(opinion, "    ");
+      printExpertOpinionWithContext(opinion, request, "    ");
     }
   }
 
   // Orchestrator trace — full reasoning chain
   if (result.orchestratorTrace) {
     console.log(`\n-- ORCHESTRATOR DECISION LOOP --`);
-    printOrchestratorTrace(result.orchestratorTrace, "  ");
+    printOrchestratorTrace(result.orchestratorTrace, request, "  ");
   }
 
   // Response
@@ -143,18 +166,16 @@ async function main(): Promise<void> {
     sessionConfig = await promptForConfig(rl);
   }
 
-  console.log(`\n  Order:        ${sessionConfig.orderContext.skuName} (${sessionConfig.orderContext.supplierSku})`);
-  console.log(`  Qty:          ${sessionConfig.orderContext.quantityRequested}`);
-  console.log(`  Style:        ${sessionConfig.orderContext.negotiationStyle ?? "ask_for_quote"}`);
-  if (sessionConfig.merchantInstructions) {
-    console.log(`  Instructions: ${sessionConfig.merchantInstructions.substring(0, 80)}${sessionConfig.merchantInstructions.length > 80 ? "..." : ""}`);
-  }
+  const oi = sessionConfig.orderInformation;
+  console.log(`\n  Order:        ${oi.product.productName} (${oi.product.supplierProductCode})`);
+  console.log(`  Qty:          ${oi.quantity.targetQuantity}`);
+  console.log(`  Pricing:      target $${oi.pricing.targetPrice}, max $${oi.pricing.maximumAcceptablePrice}`);
 
   const context = new ConversationContext();
 
   console.log(`\n  Generating initial email to supplier...`);
   try {
-    const initialEmail = await pipeline.generateInitialEmail(sessionConfig.orderContext);
+    const initialEmail = await pipeline.generateInitialEmail(oi);
     context.addAgentMessage(initialEmail.emailText);
     console.log(`\n  +-- INITIAL EMAIL TO SUPPLIER ----------------+`);
     console.log(`  |  Subject: ${initialEmail.subjectLine}`);
@@ -195,12 +216,10 @@ async function main(): Promise<void> {
 
       const request: AgentProcessRequest = {
         supplierMessage: trimmed,
-        negotiationRules: sessionConfig.negotiationRules,
-        escalationTriggers: sessionConfig.escalationTriggers,
-        orderContext: sessionConfig.orderContext,
+        orderInformation: oi,
         conversationHistory: context.formatForPrompt(),
         priorExtractedData: context.getMergedData(),
-        merchantInstructions: sessionConfig.merchantInstructions || undefined,
+        turnNumber: turn,
       };
 
       try {
@@ -216,7 +235,7 @@ async function main(): Promise<void> {
           context.addAgentMessage(result.clarificationEmail);
         }
 
-        printResult(result, turn);
+        printResult(result, request, turn);
       } catch (err) {
         console.error(`\nPipeline error: ${err}`);
       }

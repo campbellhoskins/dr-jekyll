@@ -2,6 +2,7 @@ import { AgentPipeline } from "@/lib/agent/pipeline";
 import type { LLMService, LLMServiceResult } from "@/lib/llm/service";
 import type { LLMRequest } from "@/lib/llm/types";
 import type { AgentProcessRequest } from "@/lib/agent/types";
+import { buildTestOrderInformation } from "../../helpers/order-information";
 
 /**
  * Routing mock: inspects outputSchema.name to return the correct response.
@@ -162,14 +163,12 @@ const CLARIFY_EMAIL = JSON.stringify({
 
 const baseRequest: AgentProcessRequest = {
   supplierMessage: "Price is $4.50 per unit, MOQ 500, lead time 25-30 days.",
-  negotiationRules: "Accept below $5. Lead time under 45 days.",
-  escalationTriggers: "Escalate if MOQ > 1000.",
-  orderContext: {
-    skuName: "Bamboo Cutting Board",
-    supplierSku: "BCB-001",
-    quantityRequested: "500",
-    lastKnownPrice: 4.25,
-  },
+  orderInformation: buildTestOrderInformation({
+    product: { productName: "Bamboo Cutting Board", supplierProductCode: "BCB-001", merchantSKU: "BCB-001" },
+    pricing: { targetPrice: 4.00, maximumAcceptablePrice: 5.00, lastKnownPrice: 4.25 },
+    quantity: { targetQuantity: 500 },
+    escalation: { additionalTriggers: ["Escalate if MOQ exceeds 1000 units"] },
+  }),
 };
 
 describe("AgentPipeline", () => {

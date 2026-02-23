@@ -5,9 +5,9 @@ import { LLMService } from "../lib/llm/service";
 import { ClaudeProvider } from "../lib/llm/providers/claude";
 import { OpenAIProvider } from "../lib/llm/providers/openai";
 import { AgentPipeline } from "../lib/agent/pipeline";
-import type { AgentProcessRequest, AgentProcessResponse } from "../lib/agent/types";
+import type { AgentProcessRequest, AgentProcessResponse, OrderInformation } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
-import { printExpertOpinion, printOrchestratorTrace, printResponse, printTotals } from "./display";
+import { printInputContext, printExpertOpinionWithContext, printOrchestratorTrace, printResponse, printTotals } from "./display";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
@@ -20,7 +20,7 @@ const scenarioPath = scenarioIndex !== -1 ? args[scenarioIndex + 1] : null;
 function buildLLMService(): LLMService {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
-  const primaryModel = process.env.LLM_PRIMARY_MODEL ?? "claude-3-haiku-20240307";
+  const primaryModel = process.env.LLM_CLI_MODEL ?? "claude-3-haiku-20240307";
   const fallbackModel = process.env.LLM_FALLBACK_MODEL ?? "gpt-4o";
   const maxRetries = parseInt(process.env.LLM_MAX_RETRIES ?? "3", 10);
 
@@ -47,15 +47,7 @@ interface ScenarioFile {
   name: string;
   description: string;
   supplierMessage: string;
-  negotiationRules: string;
-  escalationTriggers: string;
-  orderContext: {
-    skuName: string;
-    supplierSku: string;
-    quantityRequested: string;
-    lastKnownPrice: number;
-    specialInstructions?: string;
-  };
+  orderInformation: OrderInformation;
   expectedAction: string;
   expectedComplianceStatus: string;
 }
@@ -91,34 +83,33 @@ function printResult(result: AgentProcessResponse, scenario: ScenarioFile): void
   }
 }
 
-function printVerboseResult(result: AgentProcessResponse, scenario: ScenarioFile): void {
+function printVerboseResult(result: AgentProcessResponse, request: AgentProcessRequest, scenario: ScenarioFile): void {
   console.log(`\n${"=".repeat(60)}`);
 
-  // Initial expert opinions (parallel fan-out)
+  // 1. Full input context
+  console.log(`\n=== INPUT CONTEXT ===`);
+  printInputContext(request);
+
+  // 2. Parallel expert fan-out with context
   if (result.expertOpinions) {
-    // Show only the initial parallel experts (extraction + escalation)
-    const initialExperts = result.expertOpinions.filter(
-      (_, i) => i < 2 || (result.expertOpinions![i].expertName !== "needs" &&
-        !result.orchestratorTrace?.iterations.some(it => it.followUpOpinion === result.expertOpinions![i]))
-    );
     console.log(`\n=== PARALLEL EXPERT FAN-OUT ===`);
-    for (const opinion of initialExperts.slice(0, 2)) {
+    for (const opinion of result.expertOpinions.slice(0, 2)) {
       console.log(`\n-- ${opinion.expertName.toUpperCase()} EXPERT --`);
-      printExpertOpinion(opinion);
+      printExpertOpinionWithContext(opinion, request);
     }
   }
 
-  // Orchestrator trace — full reasoning chain
+  // 3. Orchestrator trace — full reasoning chain with context
   if (result.orchestratorTrace) {
     console.log(`\n=== ORCHESTRATOR DECISION LOOP ===`);
-    printOrchestratorTrace(result.orchestratorTrace);
+    printOrchestratorTrace(result.orchestratorTrace, request);
   }
 
-  // Response crafting
+  // 4. Response crafting
   console.log(`\n=== RESPONSE CRAFTER ===`);
   printResponse(result);
 
-  // Totals
+  // 5. Totals
   console.log(`\n=== TOTALS ===`);
   printTotals(result);
 
@@ -155,15 +146,13 @@ async function main(): Promise<void> {
 
     const request: AgentProcessRequest = {
       supplierMessage: scenario.supplierMessage,
-      negotiationRules: scenario.negotiationRules,
-      escalationTriggers: scenario.escalationTriggers,
-      orderContext: scenario.orderContext,
+      orderInformation: scenario.orderInformation,
     };
 
     const result = await pipeline.process(request);
 
     if (verbose) {
-      printVerboseResult(result, scenario);
+      printVerboseResult(result, request, scenario);
     } else {
       printResult(result, scenario);
     }

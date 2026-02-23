@@ -2,13 +2,15 @@
   "name": "escalation-moq-too-high",
   "description": "Supplier MOQ exceeds escalation trigger — should escalate",
   "supplierMessage": "Hi,\n\nFor the cotton tote bags, our price is $2.40 per unit.\nMinimum order quantity is 2000 pieces.\nLead time 20 days. FOB Shanghai. T/T payment.\n\nThanks,\nJenny",
-  "negotiationRules": "Accept if price is below $3.00 per unit. Lead time under 30 days is acceptable.",
-  "escalationTriggers": "Escalate if MOQ exceeds 1000 units. Escalate if supplier requests full prepayment. Escalate if lead time exceeds 45 days.",
-  "orderContext": {
-    "skuName": "Cotton Tote Bag",
-    "supplierSku": "CTB-100",
-    "quantityRequested": "500",
-    "lastKnownPrice": 2.50
+  "orderInformation": {
+    "merchant": { "merchantId": "m1", "merchantName": "Test Merchant", "contactName": "Test Contact", "contactEmail": "test@testmerchant.com" },
+    "supplier": { "supplierName": "Tote Bag Supplier", "supplierContactName": "Jenny", "relationshipTier": "standard" },
+    "product": { "merchantSKU": "CTB-100", "supplierProductCode": "CTB-100", "productName": "Cotton Tote Bag" },
+    "pricing": { "currency": "USD", "targetPrice": 2.50, "maximumAcceptablePrice": 3.00, "lastKnownPrice": 2.50 },
+    "quantity": { "targetQuantity": 500, "maximumAcceptableQuantity": 1000 },
+    "leadTime": { "maximumLeadTimeDays": 45 },
+    "paymentTerms": { "maximumUpfrontPercent": 50 },
+    "escalation": { "additionalTriggers": ["Escalate if MOQ exceeds 1000 units", "Escalate if supplier requests full prepayment"] }
   },
   "expectedAction": "escalate",
   "expectedComplianceStatus": "non_compliant"

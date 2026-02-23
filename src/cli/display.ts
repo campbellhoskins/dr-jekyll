@@ -1,9 +1,10 @@
 /**
  * Shared display helpers for CLI tools.
- * Prints expert opinions, orchestrator trace, and response details.
+ * Prints the full reasoning trace: input context, expert opinions,
+ * orchestrator decisions, and response details.
  */
 
-import type { AgentProcessResponse } from "../lib/agent/types";
+import type { AgentProcessRequest, AgentProcessResponse } from "../lib/agent/types";
 import type {
   ExpertOpinion,
   ExtractionAnalysis,
@@ -12,52 +13,141 @@ import type {
   OrchestratorTrace,
 } from "../lib/agent/experts/types";
 
+// ─── Input Context ───────────────────────────────────────────────────────────
+
+export function printInputContext(request: AgentProcessRequest, indent = "  "): void {
+  console.log(`${indent}--- Supplier Message ---`);
+  request.supplierMessage.split("\n").forEach((line) => {
+    console.log(`${indent}  ${line}`);
+  });
+
+  const oi = request.orderInformation;
+  console.log();
+  console.log(`${indent}--- Order Information ---`);
+  console.log(`${indent}  Product:     ${oi.product.productName} (${oi.product.supplierProductCode})`);
+  console.log(`${indent}  Quantity:    ${oi.quantity.targetQuantity}`);
+  console.log(`${indent}  Pricing:     target $${oi.pricing.targetPrice}, max $${oi.pricing.maximumAcceptablePrice}`);
+  if (oi.pricing.lastKnownPrice != null) {
+    console.log(`${indent}  Last Price:  $${oi.pricing.lastKnownPrice}`);
+  }
+  if (oi.leadTime?.maximumLeadTimeDays != null) {
+    console.log(`${indent}  Lead Time:   max ${oi.leadTime.maximumLeadTimeDays} days`);
+  }
+  if (oi.paymentTerms?.requiredTerms) {
+    console.log(`${indent}  Payment:     ${oi.paymentTerms.requiredTerms}`);
+  }
+  if (oi.escalation?.additionalTriggers?.length) {
+    console.log(`${indent}  Triggers:    ${oi.escalation.additionalTriggers.join("; ")}`);
+  }
+  if (oi.metadata?.orderNotes) {
+    console.log(`${indent}  Notes:       ${oi.metadata.orderNotes}`);
+  }
+
+  if (request.conversationHistory) {
+    console.log();
+    console.log(`${indent}--- Conversation History ---`);
+    request.conversationHistory.split("\n").forEach((line) => {
+      console.log(`${indent}  ${line}`);
+    });
+  }
+}
+
+// ─── Expert Opinions ─────────────────────────────────────────────────────────
+
+export function printExpertOpinionWithContext(
+  opinion: ExpertOpinion,
+  request: AgentProcessRequest,
+  indent = "  "
+): void {
+  const oi = request.orderInformation;
+
+  // Show what this expert received (tailored input)
+  console.log(`${indent}[INPUT to ${opinion.expertName}]`);
+  if (opinion.expertName === "extraction") {
+    console.log(`${indent}  Sees: supplier message, conversation history, prior extracted data`);
+    console.log(`${indent}  Does NOT see: merchant rules, triggers, pricing targets`);
+  } else if (opinion.expertName === "escalation") {
+    console.log(`${indent}  Sees: supplier message, escalation triggers, product name`);
+    console.log(`${indent}  Triggers: ${oi.escalation?.additionalTriggers?.join("; ") ?? "(derived from structured fields)"}`);
+    console.log(`${indent}  Does NOT see: negotiation rules, target prices`);
+  } else if (opinion.expertName === "needs") {
+    console.log(`${indent}  Sees: extracted data, negotiation rules, product/quantity`);
+    console.log(`${indent}  Pricing: target $${oi.pricing.targetPrice}, max $${oi.pricing.maximumAcceptablePrice}`);
+    console.log(`${indent}  Does NOT see: escalation triggers`);
+  }
+
+  console.log();
+  console.log(`${indent}[OUTPUT from ${opinion.expertName}]`);
+  console.log(`${indent}  Provider:    ${opinion.provider} (${opinion.model})`);
+  console.log(`${indent}  Latency:     ${opinion.latencyMs}ms`);
+  console.log(`${indent}  Tokens:      ${opinion.inputTokens} in / ${opinion.outputTokens} out`);
+  printAnalysis(opinion, indent);
+}
+
 export function printExpertOpinion(opinion: ExpertOpinion, indent = "  "): void {
   console.log(`${indent}Provider:    ${opinion.provider} (${opinion.model})`);
   console.log(`${indent}Latency:     ${opinion.latencyMs}ms`);
   console.log(`${indent}Tokens:      ${opinion.inputTokens} in / ${opinion.outputTokens} out`);
+  printAnalysis(opinion, indent);
+}
 
+function printAnalysis(opinion: ExpertOpinion, indent: string): void {
   if (opinion.analysis.type === "extraction") {
     const a = opinion.analysis as ExtractionAnalysis;
-    console.log(`${indent}Success:     ${a.success}`);
-    console.log(`${indent}Confidence:  ${a.confidence}`);
+    console.log(`${indent}  Success:     ${a.success}`);
+    console.log(`${indent}  Confidence:  ${a.confidence}`);
     if (a.extractedData) {
       const d = a.extractedData;
-      console.log(`${indent}Price:       ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency} ($${d.quotedPriceUsd} USD)` : "---"}`);
-      console.log(`${indent}Qty:         ${d.availableQuantity ?? "---"}`);
-      console.log(`${indent}MOQ:         ${d.moq ?? "---"}`);
-      console.log(`${indent}Lead Time:   ${d.leadTimeMinDays !== null ? (d.leadTimeMaxDays !== null && d.leadTimeMaxDays !== d.leadTimeMinDays ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : `${d.leadTimeMinDays} days`) : "---"}`);
-      console.log(`${indent}Payment:     ${d.paymentTerms ?? "---"}`);
-      console.log(`${indent}Validity:    ${d.validityPeriod ?? "---"}`);
+      console.log(`${indent}  Price:       ${d.quotedPrice !== null ? `${d.quotedPrice} ${d.quotedPriceCurrency} ($${d.quotedPriceUsd} USD)` : "---"}`);
+      console.log(`${indent}  Qty:         ${d.availableQuantity ?? "---"}`);
+      console.log(`${indent}  MOQ:         ${d.moq ?? "---"}`);
+      console.log(`${indent}  Lead Time:   ${d.leadTimeMinDays !== null ? (d.leadTimeMaxDays !== null && d.leadTimeMaxDays !== d.leadTimeMinDays ? `${d.leadTimeMinDays}-${d.leadTimeMaxDays} days` : `${d.leadTimeMinDays} days`) : "---"}`);
+      console.log(`${indent}  Payment:     ${d.paymentTerms ?? "---"}`);
+      console.log(`${indent}  Validity:    ${d.validityPeriod ?? "---"}`);
     }
-    if (a.notes.length > 0) console.log(`${indent}Notes:       ${JSON.stringify(a.notes)}`);
-    if (a.error) console.log(`${indent}Error:       ${a.error}`);
+    if (a.notes.length > 0) console.log(`${indent}  Notes:       ${JSON.stringify(a.notes)}`);
+    if (a.error) console.log(`${indent}  Error:       ${a.error}`);
   } else if (opinion.analysis.type === "escalation") {
     const a = opinion.analysis as EscalationAnalysis;
-    console.log(`${indent}Escalate:    ${a.shouldEscalate}`);
-    console.log(`${indent}Severity:    ${a.severity}`);
-    console.log(`${indent}Triggers evaluated: ${JSON.stringify(a.triggersEvaluated)}`);
+    console.log(`${indent}  Escalate:    ${a.shouldEscalate}`);
+    console.log(`${indent}  Severity:    ${a.severity}`);
+    console.log(`${indent}  Triggers evaluated: ${JSON.stringify(a.triggersEvaluated)}`);
     if (a.triggeredTriggers.length > 0) {
-      console.log(`${indent}Triggered:   ${JSON.stringify(a.triggeredTriggers)}`);
+      console.log(`${indent}  Triggered:   ${JSON.stringify(a.triggeredTriggers)}`);
     }
-    console.log(`${indent}Reasoning:   ${a.reasoning}`);
+    console.log(`${indent}  Reasoning:   ${a.reasoning}`);
   } else if (opinion.analysis.type === "needs") {
     const a = opinion.analysis as NeedsAnalysis;
-    console.log(`${indent}Missing:     ${a.missingFields.length > 0 ? a.missingFields.join(", ") : "(none)"}`);
+    console.log(`${indent}  Missing:     ${a.missingFields.length > 0 ? a.missingFields.join(", ") : "(none)"}`);
     if (a.prioritizedQuestions.length > 0) {
-      console.log(`${indent}Questions:`);
+      console.log(`${indent}  Questions:`);
       a.prioritizedQuestions.forEach((q, i) => {
-        console.log(`${indent}  ${i + 1}. ${q}`);
+        console.log(`${indent}    ${i + 1}. ${q}`);
       });
     }
-    console.log(`${indent}Reasoning:   ${a.reasoning}`);
+    console.log(`${indent}  Reasoning:   ${a.reasoning}`);
   } else {
-    console.log(`${indent}Analysis:    ${JSON.stringify(opinion.analysis, null, 2)}`);
+    console.log(`${indent}  Analysis:    ${JSON.stringify(opinion.analysis, null, 2)}`);
   }
 }
 
-export function printOrchestratorTrace(trace: OrchestratorTrace, indent = "  "): void {
+// ─── Orchestrator Trace ──────────────────────────────────────────────────────
+
+export function printOrchestratorTrace(
+  trace: OrchestratorTrace,
+  request: AgentProcessRequest,
+  indent = "  "
+): void {
+  const oi = request.orderInformation;
   console.log(`${indent}Total iterations: ${trace.totalIterations}`);
+  console.log();
+  console.log(`${indent}[INPUT to orchestrator]`);
+  console.log(`${indent}  Sees: ALL expert opinions + full order information`);
+  console.log(`${indent}  The orchestrator is the ONLY agent with the full picture.`);
+  console.log(`${indent}  Pricing: target $${oi.pricing.targetPrice}, max $${oi.pricing.maximumAcceptablePrice}`);
+  if (oi.escalation?.additionalTriggers?.length) {
+    console.log(`${indent}  Custom Triggers: ${oi.escalation.additionalTriggers.join("; ")}`);
+  }
   console.log();
 
   for (let i = 0; i < trace.iterations.length; i++) {
@@ -93,6 +183,8 @@ export function printOrchestratorTrace(trace: OrchestratorTrace, indent = "  "):
     if (i < trace.iterations.length - 1) console.log();
   }
 }
+
+// ─── Response & Totals ───────────────────────────────────────────────────────
 
 export function printResponse(result: AgentProcessResponse, indent = "  "): void {
   if (result.responseGeneration) {

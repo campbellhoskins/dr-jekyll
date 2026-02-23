@@ -1,5 +1,146 @@
 import { z } from "zod/v4";
 
+// ─── OrderInformation — structured merchant order input ─────────────────────
+
+export type RelationshipTier = "preferred" | "standard" | "new";
+export type ShippingMethod = "sea" | "air" | "express";
+export type CounterPriceStrategy = "split_difference" | "anchor_low" | "target_only";
+export type NegotiationPriority = "price" | "lead_time" | "payment_terms" | "quantity";
+export type OrderType = "routine_reorder" | "initial_order" | "urgent_restock";
+export type UrgencyLevel = "standard" | "urgent";
+
+export interface OrderInformation {
+  merchant: {
+    merchantId: string;
+    merchantName: string;
+    contactName: string;
+    contactEmail: string;
+  };
+  supplier: {
+    supplierName: string;
+    supplierContactName?: string;
+    supplierContactEmail?: string;
+    relationshipTier?: RelationshipTier;
+  };
+  product: {
+    merchantSKU: string;
+    supplierProductCode: string;
+    productName: string;
+    productDescription?: string;
+    unitOfMeasure?: string;
+    requiredCertifications?: string[];
+    packagingRequirements?: string;
+  };
+  pricing: {
+    currency: string;
+    targetPrice: number;
+    maximumAcceptablePrice: number;
+    lastKnownPrice?: number;
+    neverCounterAbove?: number;
+  };
+  quantity: {
+    targetQuantity: number;
+    minimumAcceptableQuantity?: number;
+    maximumAcceptableQuantity?: number;
+  };
+  leadTime?: {
+    maximumLeadTimeDays?: number;
+    preferredLeadTimeDays?: number;
+  };
+  paymentTerms?: {
+    requiredTerms?: string;
+    acceptableAlternatives?: string[];
+    maximumUpfrontPercent?: number;
+  };
+  shipping?: {
+    requiredIncoterms?: string;
+    originLocation?: string;
+    destinationLocation?: string;
+    preferredMethod?: ShippingMethod;
+  };
+  negotiation?: {
+    neverAcceptFirstOffer?: boolean;
+    maxNegotiationRounds?: number;
+    counterPriceStrategy?: CounterPriceStrategy;
+    priorityOrder?: NegotiationPriority[];
+  };
+  escalation?: {
+    additionalTriggers?: string[];
+  };
+  metadata?: {
+    poNumber?: string;
+    orderType?: OrderType;
+    urgency?: UrgencyLevel;
+    orderNotes?: string;
+  };
+}
+
+export const OrderInformationSchema = z.object({
+  merchant: z.object({
+    merchantId: z.string(),
+    merchantName: z.string(),
+    contactName: z.string(),
+    contactEmail: z.string(),
+  }),
+  supplier: z.object({
+    supplierName: z.string(),
+    supplierContactName: z.string().optional(),
+    supplierContactEmail: z.string().optional(),
+    relationshipTier: z.enum(["preferred", "standard", "new"]).optional(),
+  }),
+  product: z.object({
+    merchantSKU: z.string(),
+    supplierProductCode: z.string(),
+    productName: z.string(),
+    productDescription: z.string().optional(),
+    unitOfMeasure: z.string().optional(),
+    requiredCertifications: z.array(z.string()).optional(),
+    packagingRequirements: z.string().optional(),
+  }),
+  pricing: z.object({
+    currency: z.string(),
+    targetPrice: z.number(),
+    maximumAcceptablePrice: z.number(),
+    lastKnownPrice: z.number().optional(),
+    neverCounterAbove: z.number().optional(),
+  }),
+  quantity: z.object({
+    targetQuantity: z.number(),
+    minimumAcceptableQuantity: z.number().optional(),
+    maximumAcceptableQuantity: z.number().optional(),
+  }),
+  leadTime: z.object({
+    maximumLeadTimeDays: z.number().optional(),
+    preferredLeadTimeDays: z.number().optional(),
+  }).optional(),
+  paymentTerms: z.object({
+    requiredTerms: z.string().optional(),
+    acceptableAlternatives: z.array(z.string()).optional(),
+    maximumUpfrontPercent: z.number().optional(),
+  }).optional(),
+  shipping: z.object({
+    requiredIncoterms: z.string().optional(),
+    originLocation: z.string().optional(),
+    destinationLocation: z.string().optional(),
+    preferredMethod: z.enum(["sea", "air", "express"]).optional(),
+  }).optional(),
+  negotiation: z.object({
+    neverAcceptFirstOffer: z.boolean().optional(),
+    maxNegotiationRounds: z.number().optional(),
+    counterPriceStrategy: z.enum(["split_difference", "anchor_low", "target_only"]).optional(),
+    priorityOrder: z.array(z.enum(["price", "lead_time", "payment_terms", "quantity"])).optional(),
+  }).optional(),
+  escalation: z.object({
+    additionalTriggers: z.array(z.string()).optional(),
+  }).optional(),
+  metadata: z.object({
+    poNumber: z.string().optional(),
+    orderType: z.enum(["routine_reorder", "initial_order", "urgent_restock"]).optional(),
+    urgency: z.enum(["standard", "urgent"]).optional(),
+    orderNotes: z.string().optional(),
+  }).optional(),
+});
+
 // ─── Currency normalization ───────────────────────────────────────────────────
 // Maps common aliases to ISO 4217 codes
 const CURRENCY_ALIASES: Record<string, string> = {
@@ -86,39 +227,6 @@ export const RESPONSE_GENERATION_JSON_SCHEMA = {
   required: ["emailText"],
 };
 
-// ─── Instruction Classification (single user input → three internal fields) ───
-export const INSTRUCTION_CLASSIFICATION_JSON_SCHEMA = {
-  type: "object" as const,
-  properties: {
-    negotiationRules: {
-      type: "string",
-      description: "Rules for evaluating and negotiating the quote. E.g., acceptable price ranges, preferred payment terms, quantity thresholds. If none found, use empty string.",
-    },
-    escalationTriggers: {
-      type: "string",
-      description: "Conditions that require stopping negotiation and alerting the merchant. E.g., product discontinued, price above hard limit, unacceptable terms. If none found, use empty string.",
-    },
-    specialInstructions: {
-      type: "string",
-      description: "Product specifications, preferences, or requirements to communicate to the supplier. E.g., color, size, packaging, shipping method. If none found, use empty string.",
-    },
-  },
-  required: ["negotiationRules", "escalationTriggers", "specialInstructions"],
-};
-
-export interface ClassifiedInstructions {
-  negotiationRules: string;
-  escalationTriggers: string;
-  specialInstructions: string;
-}
-
-export const LLMInstructionClassificationSchema = z.object({
-  negotiationRules: z.string(),
-  escalationTriggers: z.string(),
-  specialInstructions: z.string(),
-});
-
-export type LLMInstructionClassificationOutput = z.infer<typeof LLMInstructionClassificationSchema>;
 
 // ─── ExtractedQuoteData — mirrors PRODUCT_SPEC Section 3.11 ───────────────────
 // Field names match the spec exactly. DB-only fields (id, messageId, orderId,
@@ -159,17 +267,6 @@ export interface ExtractionResult {
 export type AgentAction = "accept" | "counter" | "escalate" | "clarify";
 export type ComplianceStatus = "compliant" | "non_compliant" | "partial";
 
-// ─── Order context (from AgentProcessRequest) ─────────────────────────────────
-export type NegotiationStyle = "ask_for_quote" | "state_price_upfront";
-
-export interface OrderContext {
-  skuName: string;
-  supplierSku: string;
-  quantityRequested: string;
-  lastKnownPrice: number;
-  negotiationStyle?: NegotiationStyle;
-  specialInstructions?: string;
-}
 
 // ─── Zod schema for combined policy evaluation + decision LLM output ──────────
 export const LLMPolicyDecisionOutputSchema = z.object({
@@ -249,12 +346,10 @@ export interface GeneratedResponse {
 // ─── Top-level pipeline types ─────────────────────────────────────────────────
 export interface AgentProcessRequest {
   supplierMessage: string;
-  negotiationRules: string;
-  escalationTriggers: string;
-  orderContext: OrderContext;
+  orderInformation: OrderInformation;
   conversationHistory?: string;   // Formatted conversation thread for LLM context
   priorExtractedData?: Partial<ExtractedQuoteData>; // Merged data from prior turns
-  merchantInstructions?: string;  // Single user input — classified into rules/triggers/instructions
+  turnNumber?: number;            // For neverAcceptFirstOffer logic
 }
 
 export interface AgentProcessResponse {

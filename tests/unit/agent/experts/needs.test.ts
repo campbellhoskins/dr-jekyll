@@ -2,6 +2,7 @@ import { NeedsExpert } from "@/lib/agent/experts/needs";
 import type { LLMService, LLMServiceResult } from "@/lib/llm/service";
 import type { NeedsAnalysis, NeedsExpertInput } from "@/lib/agent/experts/types";
 import type { ExtractedQuoteData } from "@/lib/agent/types";
+import { buildTestOrderInformation } from "../../../helpers/order-information";
 
 function createMockLLMService(response: string | Error): LLMService {
   return {
@@ -50,12 +51,12 @@ const partialData: ExtractedQuoteData = {
 
 const baseInput: NeedsExpertInput = {
   extractedData: partialData,
-  negotiationRules: "Accept if price below $5 and lead time under 30 days.",
-  orderContext: {
-    skuName: "Bamboo Board",
-    supplierSku: "BCB-001",
-    quantityRequested: "500",
-  },
+  orderInformation: buildTestOrderInformation({
+    product: { productName: "Bamboo Board", supplierProductCode: "BCB-001", merchantSKU: "BCB-001" },
+    pricing: { targetPrice: 4.00, maximumAcceptablePrice: 5.00 },
+    quantity: { targetQuantity: 500 },
+    leadTime: { maximumLeadTimeDays: 30 },
+  }),
 };
 
 const MISSING_FIELDS_RESPONSE = JSON.stringify({

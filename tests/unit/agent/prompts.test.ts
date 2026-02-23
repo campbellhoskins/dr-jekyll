@@ -4,7 +4,8 @@ import {
   buildCounterOfferPrompt,
   buildClarificationPrompt,
 } from "@/lib/agent/prompts";
-import type { ExtractedQuoteData, OrderContext } from "@/lib/agent/types";
+import type { ExtractedQuoteData } from "@/lib/agent/types";
+import { buildTestOrderInformation } from "../../helpers/order-information";
 
 describe("buildExtractionPrompt", () => {
   const emailText = "Hi, our price is $4.50 per unit for 500 pieces.";
@@ -58,20 +59,18 @@ const sampleExtractedData: ExtractedQuoteData = {
   rawExtractionJson: {},
 };
 
-const sampleOrderContext: OrderContext = {
-  skuName: "Bamboo Cutting Board",
-  supplierSku: "BCB-001",
-  quantityRequested: "500",
-  lastKnownPrice: 4.25,
-};
+const sampleOrderInformation = buildTestOrderInformation({
+  product: { productName: "Bamboo Cutting Board", supplierProductCode: "BCB-001", merchantSKU: "BCB-001" },
+  pricing: { targetPrice: 4.00, maximumAcceptablePrice: 5.00, lastKnownPrice: 4.25 },
+  quantity: { targetQuantity: 500 },
+  escalation: { additionalTriggers: ["Escalate if MOQ exceeds 1000 units"] },
+});
 
 describe("buildPolicyDecisionPrompt", () => {
   it("includes extracted data in user message", () => {
     const prompt = buildPolicyDecisionPrompt(
       sampleExtractedData,
-      "Accept below $5",
-      "Escalate if MOQ > 1000",
-      sampleOrderContext
+      sampleOrderInformation
     );
     expect(prompt.userMessage).toContain("4.5");
     expect(prompt.userMessage).toContain("USD");
@@ -80,21 +79,17 @@ describe("buildPolicyDecisionPrompt", () => {
   it("includes negotiation rules in user message", () => {
     const prompt = buildPolicyDecisionPrompt(
       sampleExtractedData,
-      "Accept below $5 per unit",
-      "Escalate if MOQ > 1000",
-      sampleOrderContext
+      sampleOrderInformation
     );
-    expect(prompt.userMessage).toContain("Accept below $5 per unit");
+    expect(prompt.userMessage).toContain("Target price $4/unit");
   });
 
   it("includes escalation triggers in user message", () => {
     const prompt = buildPolicyDecisionPrompt(
       sampleExtractedData,
-      "Accept below $5",
-      "Escalate if MOQ exceeds 1000",
-      sampleOrderContext
+      sampleOrderInformation
     );
-    expect(prompt.userMessage).toContain("Escalate if MOQ exceeds 1000");
+    expect(prompt.userMessage).toContain("exceeds $5/unit");
   });
 });
 
@@ -104,7 +99,7 @@ describe("buildCounterOfferPrompt", () => {
       sampleExtractedData,
       "Price too high, target is $3.80",
       { targetPrice: 3.8 },
-      sampleOrderContext
+      sampleOrderInformation
     );
     expect(prompt.userMessage).toContain("3.8");
     expect(prompt.userMessage).toContain("Bamboo Cutting Board");
@@ -116,7 +111,7 @@ describe("buildClarificationPrompt", () => {
     const prompt = buildClarificationPrompt(
       sampleExtractedData,
       ["Supplier asked for specifications"],
-      sampleOrderContext
+      sampleOrderInformation
     );
     expect(prompt.userMessage).toContain("specifications");
     expect(prompt.userMessage).toContain("Bamboo Cutting Board");
@@ -125,9 +120,9 @@ describe("buildClarificationPrompt", () => {
 
 describe("all new prompts", () => {
   it("set temperature=0 and maxTokens=1024", () => {
-    const p1 = buildPolicyDecisionPrompt(sampleExtractedData, "rules", "triggers", sampleOrderContext);
-    const p2 = buildCounterOfferPrompt(sampleExtractedData, "reason", {}, sampleOrderContext);
-    const p3 = buildClarificationPrompt(sampleExtractedData, [], sampleOrderContext);
+    const p1 = buildPolicyDecisionPrompt(sampleExtractedData, sampleOrderInformation);
+    const p2 = buildCounterOfferPrompt(sampleExtractedData, "reason", {}, sampleOrderInformation);
+    const p3 = buildClarificationPrompt(sampleExtractedData, [], sampleOrderInformation);
 
     for (const p of [p1, p2, p3]) {
       expect(p.temperature).toBe(0);

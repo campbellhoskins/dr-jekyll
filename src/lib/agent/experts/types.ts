@@ -1,4 +1,4 @@
-import type { ExtractedQuoteData, OrderContext, AgentAction } from "../types";
+import type { ExtractedQuoteData, OrderInformation, AgentAction } from "../types";
 
 // ─── Expert Opinion (common output shape) ────────────────────────────────────
 
@@ -51,23 +51,14 @@ export interface ExtractionExpertInput {
 export interface EscalationExpertInput {
   supplierMessage: string;
   conversationHistory?: string;
-  escalationTriggers: string;
+  orderInformation: OrderInformation;
   extractedData?: ExtractedQuoteData;
-  orderContext: {
-    skuName: string;
-    supplierSku: string;
-  };
   additionalQuestion?: string;
 }
 
 export interface NeedsExpertInput {
   extractedData: ExtractedQuoteData | null;
-  negotiationRules: string;
-  orderContext: {
-    skuName: string;
-    supplierSku: string;
-    quantityRequested: string;
-  };
+  orderInformation: OrderInformation;
   conversationHistory?: string;
   additionalQuestion?: string;
 }
@@ -78,9 +69,8 @@ export interface ResponseCrafterInput {
   action: AgentAction;
   reasoning: string;
   extractedData: ExtractedQuoteData | null;
-  orderContext: OrderContext;
+  orderInformation: OrderInformation;
   conversationHistory?: string;
-  specialInstructions?: string;
   counterTerms?: CounterTerms;
   needsAnalysis?: NeedsAnalysis;
 }
@@ -105,12 +95,7 @@ export interface OrchestratorDecision {
 export interface OrchestratorInput {
   supplierMessage: string;
   conversationHistory?: string;
-  orderContext: OrderContext;
-  classifiedInstructions: {
-    negotiationRules: string;
-    escalationTriggers: string;
-    specialInstructions: string;
-  };
+  orderInformation: OrderInformation;
   expertOpinions: ExpertOpinion[];
   priorOrchestratorDecisions: OrchestratorDecision[];
 }

@@ -17,7 +17,7 @@ const EscalationOutputSchema = z.object({
 
 /**
  * Escalation Expert — evaluates supplier message against escalation triggers via LLM.
- * Receives triggers + supplier message + extracted data.
+ * Derives triggers from structured OrderInformation fields + custom triggers.
  * Does NOT see negotiation rules, target prices, or special instructions.
  */
 export class EscalationExpert {
@@ -29,17 +29,11 @@ export class EscalationExpert {
   }
 
   async analyze(input: EscalationExpertInput): Promise<ExpertOpinion> {
-    // If no escalation triggers provided, return a no-escalation opinion immediately
-    if (!input.escalationTriggers || input.escalationTriggers.trim() === "") {
-      return this.buildNoTriggersOpinion();
-    }
-
     try {
       const prompt = buildEscalationPrompt(
         input.supplierMessage,
-        input.escalationTriggers,
+        input.orderInformation,
         input.extractedData,
-        input.orderContext,
         input.conversationHistory,
         input.additionalQuestion
       );
@@ -87,26 +81,5 @@ export class EscalationExpert {
         outputTokens: 0,
       };
     }
-  }
-
-  private buildNoTriggersOpinion(): ExpertOpinion {
-    const analysis: EscalationAnalysis = {
-      type: "escalation",
-      shouldEscalate: false,
-      reasoning: "No escalation triggers provided",
-      triggersEvaluated: [],
-      triggeredTriggers: [],
-      severity: "low",
-    };
-
-    return {
-      expertName: this.name,
-      analysis,
-      provider: "none",
-      model: "none",
-      latencyMs: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-    };
   }
 }

@@ -3,7 +3,7 @@ import type {
   AgentAction,
   ExtractedQuoteData,
   GeneratedResponse,
-  OrderContext,
+  OrderInformation,
   PolicyEvaluationResult,
 } from "./types";
 import { buildCounterOfferPrompt, buildClarificationPrompt } from "./prompts";
@@ -20,21 +20,21 @@ export class ResponseGenerator {
     action: AgentAction,
     extractedData: ExtractedQuoteData,
     policyEvaluation: PolicyEvaluationResult | null,
-    orderContext: OrderContext,
+    orderInformation: OrderInformation,
     reasoning: string
   ): Promise<GeneratedResponse> {
     switch (action) {
       case "accept":
-        return this.buildAcceptResponse(extractedData, orderContext, reasoning);
+        return this.buildAcceptResponse(extractedData, orderInformation, reasoning);
       case "counter":
         return this.buildCounterResponse(
           extractedData,
           policyEvaluation,
-          orderContext,
+          orderInformation,
           reasoning
         );
       case "clarify":
-        return this.buildClarifyResponse(extractedData, orderContext, reasoning);
+        return this.buildClarifyResponse(extractedData, orderInformation, reasoning);
       case "escalate":
         return { escalationReason: reasoning };
     }
@@ -42,10 +42,10 @@ export class ResponseGenerator {
 
   private buildAcceptResponse(
     data: ExtractedQuoteData,
-    orderContext: OrderContext,
+    orderInformation: OrderInformation,
     reasoning: string
   ): GeneratedResponse {
-    const quantity = data.availableQuantity ?? parseQuantity(orderContext.quantityRequested);
+    const quantity = data.availableQuantity ?? orderInformation.quantity.targetQuantity;
     const price = data.quotedPriceUsd ?? data.quotedPrice ?? 0;
     const total = Math.round(quantity * price * 100) / 100;
 
@@ -62,7 +62,7 @@ export class ResponseGenerator {
   private async buildCounterResponse(
     data: ExtractedQuoteData,
     policyEvaluation: PolicyEvaluationResult | null,
-    orderContext: OrderContext,
+    orderInformation: OrderInformation,
     reasoning: string
   ): Promise<GeneratedResponse> {
     const counterTerms = policyEvaluation?.counterTerms ?? {};
@@ -71,7 +71,7 @@ export class ResponseGenerator {
       data,
       reasoning,
       counterTerms,
-      orderContext
+      orderInformation
     );
 
     try {
@@ -104,11 +104,11 @@ export class ResponseGenerator {
 
   private async buildClarifyResponse(
     data: ExtractedQuoteData,
-    orderContext: OrderContext,
+    orderInformation: OrderInformation,
     reasoning: string
   ): Promise<GeneratedResponse> {
     const notes = [reasoning];
-    const prompt = buildClarificationPrompt(data, notes, orderContext);
+    const prompt = buildClarificationPrompt(data, notes, orderInformation);
 
     try {
       const llmResult = await this.llmService.call(prompt);
@@ -134,10 +134,4 @@ export class ResponseGenerator {
       };
     }
   }
-}
-
-function parseQuantity(quantityRequested: string): number {
-  // Handle ranges like "500-1000" by using the lower bound
-  const match = quantityRequested.match(/(\d+)/);
-  return match ? parseInt(match[1], 10) : 0;
 }

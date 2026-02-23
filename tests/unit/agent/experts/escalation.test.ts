@@ -2,6 +2,7 @@ import { EscalationExpert } from "@/lib/agent/experts/escalation";
 import type { LLMService, LLMServiceResult } from "@/lib/llm/service";
 import type { EscalationAnalysis, EscalationExpertInput } from "@/lib/agent/experts/types";
 import type { ExtractedQuoteData } from "@/lib/agent/types";
+import { buildTestOrderInformation } from "../../../helpers/order-information";
 
 function createMockLLMService(response: string | Error): LLMService {
   return {
@@ -24,8 +25,10 @@ function createMockLLMService(response: string | Error): LLMService {
 
 const baseInput: EscalationExpertInput = {
   supplierMessage: "Price is $4.50 per unit, MOQ 500.",
-  escalationTriggers: "Escalate if MOQ exceeds 1000 units.",
-  orderContext: { skuName: "Bamboo Board", supplierSku: "BCB-001" },
+  orderInformation: buildTestOrderInformation({
+    product: { productName: "Bamboo Board", supplierProductCode: "BCB-001", merchantSKU: "BCB-001" },
+    escalation: { additionalTriggers: ["Escalate if MOQ exceeds 1000 units"] },
+  }),
 };
 
 const extractedData: ExtractedQuoteData = {
@@ -100,31 +103,17 @@ describe("EscalationExpert", () => {
 
     const opinion = await expert.analyze({
       supplierMessage: "Unfortunately, this product has been discontinued.",
-      escalationTriggers: "Escalate if product discontinued. Escalate if price above $10.",
-      orderContext: { skuName: "Widget", supplierSku: "W-001" },
+      orderInformation: buildTestOrderInformation({
+        product: { productName: "Widget", supplierProductCode: "W-001", merchantSKU: "W-001" },
+        pricing: { maximumAcceptablePrice: 10.00 },
+        escalation: { additionalTriggers: ["Escalate if product discontinued", "Escalate if price above $10"] },
+      }),
     });
 
     const analysis = opinion.analysis as EscalationAnalysis;
     expect(analysis.shouldEscalate).toBe(true);
     expect(analysis.severity).toBe("critical");
     expect(analysis.triggeredTriggers).toContain("Product discontinued");
-  });
-
-  it("returns no-escalation opinion when no triggers provided", async () => {
-    const service = createMockLLMService(NO_ESCALATION);
-    const expert = new EscalationExpert(service);
-
-    const opinion = await expert.analyze({
-      supplierMessage: "Price is $4.50.",
-      escalationTriggers: "",
-      orderContext: { skuName: "Widget", supplierSku: "W-001" },
-    });
-
-    // Should NOT call the LLM
-    expect(service.call).not.toHaveBeenCalled();
-    const analysis = opinion.analysis as EscalationAnalysis;
-    expect(analysis.shouldEscalate).toBe(false);
-    expect(analysis.reasoning).toContain("No escalation triggers");
   });
 
   it("falls back to escalation on LLM failure", async () => {

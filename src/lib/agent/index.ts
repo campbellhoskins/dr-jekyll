@@ -8,7 +8,6 @@ export { normalizeCurrency, LLMExtractionOutputSchema } from "./types";
 export { AgentPipeline, type InitialEmailResult } from "./pipeline";
 export { Orchestrator, type OrchestratorResult } from "./orchestrator";
 export { ConversationContext, type ConversationMessage } from "./conversation-context";
-export { InstructionClassifier } from "./instruction-classifier";
 
 // Experts
 export { ExtractionExpert } from "./experts/extraction";
@@ -23,15 +22,17 @@ export {
   buildOrchestratorPrompt,
   buildCounterOfferCrafterPrompt,
   buildClarificationCrafterPrompt,
+  formatOrderInformation,
+  formatEscalationTriggers,
+  formatNegotiationRules,
 } from "./experts/prompts";
 
-// Legacy prompts (instruction classification + initial email still in main prompts.ts)
+// Main prompts
 export {
   buildPolicyDecisionPrompt,
   buildCounterOfferPrompt,
   buildClarificationPrompt,
   buildInitialEmailPrompt,
-  buildInstructionClassificationPrompt,
 } from "./prompts";
 
 export {
@@ -46,17 +47,22 @@ export type {
   LLMExtractionOutput,
   AgentAction,
   ComplianceStatus,
-  OrderContext,
+  OrderInformation,
   PolicyEvaluationResult,
   CounterOffer,
   ProposedApproval,
   GeneratedResponse,
   AgentProcessRequest,
   AgentProcessResponse,
-  NegotiationStyle,
-  ClassifiedInstructions,
+  RelationshipTier,
+  ShippingMethod,
+  CounterPriceStrategy,
+  NegotiationPriority,
+  OrderType,
+  UrgencyLevel,
 } from "./types";
 export {
+  OrderInformationSchema,
   LLMPolicyDecisionOutputSchema,
   LLMResponseGenerationOutputSchema,
 } from "./types";

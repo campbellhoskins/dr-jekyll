@@ -16,7 +16,7 @@ const NeedsOutputSchema = z.object({
 /**
  * Needs Expert — identifies information gaps in the supplier's quote.
  * Called on-demand by the orchestrator when extraction shows gaps.
- * Receives extracted data + negotiation rules (to know which fields matter).
+ * Receives extracted data + negotiation rules (derived from OrderInformation).
  * Does NOT see escalation triggers, target prices, or special instructions.
  */
 export class NeedsExpert {
@@ -31,8 +31,7 @@ export class NeedsExpert {
     try {
       const prompt = buildNeedsPrompt(
         input.extractedData,
-        input.negotiationRules,
-        input.orderContext,
+        input.orderInformation,
         input.conversationHistory,
         input.additionalQuestion
       );

@@ -1,6 +1,6 @@
 import type { LLMService } from "../llm/service";
 import { z } from "zod/v4";
-import type { OrderContext, ClassifiedInstructions, ExtractedQuoteData } from "./types";
+import type { OrderInformation, ExtractedQuoteData } from "./types";
 import { buildOrchestratorPrompt } from "./experts/prompts";
 import { ExtractionExpert } from "./experts/extraction";
 import { EscalationExpert } from "./experts/escalation";
@@ -8,7 +8,6 @@ import { NeedsExpert } from "./experts/needs";
 import type {
   ExpertOpinion,
   ExtractionAnalysis,
-  EscalationAnalysis,
   NeedsAnalysis,
   OrchestratorDecision,
   OrchestratorTrace,
@@ -58,10 +57,10 @@ export class Orchestrator {
 
   async run(
     supplierMessage: string,
-    orderContext: OrderContext,
-    classifiedInstructions: ClassifiedInstructions,
+    orderInformation: OrderInformation,
     conversationHistory?: string,
-    priorExtractedData?: Partial<ExtractedQuoteData>
+    priorExtractedData?: Partial<ExtractedQuoteData>,
+    turnNumber?: number
   ): Promise<OrchestratorResult> {
     // Step 1: Parallel fan-out — extraction + escalation run simultaneously
     const extractionInput = {
@@ -73,11 +72,7 @@ export class Orchestrator {
     const escalationInput = {
       supplierMessage,
       conversationHistory,
-      escalationTriggers: classifiedInstructions.escalationTriggers,
-      orderContext: {
-        skuName: orderContext.skuName,
-        supplierSku: orderContext.supplierSku,
-      },
+      orderInformation,
     };
 
     const [extractionOpinion, escalationOpinion] = await Promise.all([
@@ -89,10 +84,6 @@ export class Orchestrator {
     const extractionAnalysis = extractionOpinion.analysis as ExtractionAnalysis;
     const extractedData = extractionAnalysis.extractedData;
 
-    // Update escalation opinion with extracted data if we have it
-    // (The initial escalation ran without extracted data; if needed,
-    // the orchestrator can re-consult with extracted data)
-
     const opinions: ExpertOpinion[] = [extractionOpinion, escalationOpinion];
     const iterations: OrchestratorIteration[] = [];
     const priorDecisions: OrchestratorDecision[] = [];
@@ -102,15 +93,15 @@ export class Orchestrator {
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const prompt = buildOrchestratorPrompt(
         supplierMessage,
-        orderContext,
-        classifiedInstructions,
+        orderInformation,
         opinions.map(o => ({ expertName: o.expertName, analysis: o.analysis })),
         conversationHistory,
         priorDecisions.length > 0 ? priorDecisions.map(d => ({
           reasoning: d.reasoning,
           nextExpert: d.nextExpert,
           questionForExpert: d.questionForExpert,
-        })) : undefined
+        })) : undefined,
+        turnNumber
       );
 
       let decision: OrchestratorDecision;
@@ -162,8 +153,7 @@ export class Orchestrator {
           decision.nextExpert,
           decision.questionForExpert ?? "",
           supplierMessage,
-          classifiedInstructions,
-          orderContext,
+          orderInformation,
           extractedData,
           conversationHistory
         );
@@ -211,8 +201,7 @@ export class Orchestrator {
     expertName: string,
     question: string,
     supplierMessage: string,
-    classifiedInstructions: ClassifiedInstructions,
-    orderContext: OrderContext,
+    orderInformation: OrderInformation,
     extractedData: ExtractedQuoteData | null,
     conversationHistory?: string
   ): Promise<ExpertOpinion> {
@@ -228,24 +217,15 @@ export class Orchestrator {
         return this.escalationExpert.analyze({
           supplierMessage,
           conversationHistory,
-          escalationTriggers: classifiedInstructions.escalationTriggers,
+          orderInformation,
           extractedData: extractedData ?? undefined,
-          orderContext: {
-            skuName: orderContext.skuName,
-            supplierSku: orderContext.supplierSku,
-          },
           additionalQuestion: question,
         });
 
       case "needs":
         return this.needsExpert.analyze({
           extractedData,
-          negotiationRules: classifiedInstructions.negotiationRules,
-          orderContext: {
-            skuName: orderContext.skuName,
-            supplierSku: orderContext.supplierSku,
-            quantityRequested: orderContext.quantityRequested,
-          },
+          orderInformation,
           conversationHistory,
           additionalQuestion: question,
         });

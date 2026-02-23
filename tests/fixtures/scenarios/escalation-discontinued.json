@@ -2,13 +2,13 @@
   "name": "escalation-product-discontinued",
   "description": "Supplier says product is discontinued — should escalate via pre-policy check",
   "supplierMessage": "Hello,\n\nSorry but we have discontinued the ceramic vase line you inquired about. We no longer manufacture this product. You might try Foshan Ceramics Co for similar items.\n\nApologies for the inconvenience.\nBest,\nZhou Wei",
-  "negotiationRules": "Accept if price is below $15.00 per unit.",
-  "escalationTriggers": "Escalate if supplier mentions discontinuation or product changes.",
-  "orderContext": {
-    "skuName": "Ceramic Vase - Large",
-    "supplierSku": "CV-LG-01",
-    "quantityRequested": "200",
-    "lastKnownPrice": 12.00
+  "orderInformation": {
+    "merchant": { "merchantId": "m1", "merchantName": "Test Merchant", "contactName": "Test Contact", "contactEmail": "test@testmerchant.com" },
+    "supplier": { "supplierName": "Ceramic Supplier Co", "supplierContactName": "Zhou Wei", "relationshipTier": "standard" },
+    "product": { "merchantSKU": "CV-LG-01", "supplierProductCode": "CV-LG-01", "productName": "Ceramic Vase - Large" },
+    "pricing": { "currency": "USD", "targetPrice": 12.00, "maximumAcceptablePrice": 15.00, "lastKnownPrice": 12.00 },
+    "quantity": { "targetQuantity": 200 },
+    "escalation": { "additionalTriggers": ["Escalate if supplier mentions discontinuation or product changes"] }
   },
   "expectedAction": "escalate",
   "expectedComplianceStatus": "non_compliant"

@@ -5,7 +5,8 @@ import { Extractor } from "@/lib/agent/extractor";
 import { EscalationExpert } from "@/lib/agent/experts/escalation";
 import { ResponseCrafter } from "@/lib/agent/experts/response-crafter";
 import { AgentPipeline } from "@/lib/agent/pipeline";
-import type { ExtractedQuoteData, OrderContext } from "@/lib/agent/types";
+import type { ExtractedQuoteData } from "@/lib/agent/types";
+import { buildTestOrderInformation } from "../../helpers/order-information";
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 const describeOrSkip = apiKey ? describe : describe.skip;
@@ -30,17 +31,16 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
     rawExtractionJson: {},
   };
 
-  const sampleContext: OrderContext = {
-    skuName: "LED Desk Lamp",
-    supplierSku: "LDL-200",
-    quantityRequested: "500",
-    lastKnownPrice: 3.8,
-  };
+  const sampleOrderInformation = buildTestOrderInformation({
+    product: { productName: "LED Desk Lamp", supplierProductCode: "LDL-200", merchantSKU: "LDL-200" },
+    pricing: { targetPrice: 3.80, maximumAcceptablePrice: 4.20, lastKnownPrice: 3.80 },
+    quantity: { targetQuantity: 500 },
+  });
 
   beforeAll(() => {
     const provider = new ClaudeProvider(
       apiKey!,
-      process.env.LLM_PRIMARY_MODEL ?? "claude-3-haiku-20240307"
+      process.env.LLM_TEST_MODEL ?? "claude-3-haiku-20240307"
     );
     service = new LLMService({
       primaryProvider: provider,
@@ -69,9 +69,11 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
   it("escalation evaluation returns valid EscalationAnalysis via structured output", async () => {
     const opinion = await escalationExpert.analyze({
       supplierMessage: "Price is $4.80 per unit, MOQ 500.",
-      escalationTriggers: "Escalate if MOQ exceeds 1000.",
       extractedData: sampleData,
-      orderContext: { skuName: sampleContext.skuName, supplierSku: sampleContext.supplierSku },
+      orderInformation: buildTestOrderInformation({
+        product: { productName: "LED Desk Lamp", supplierProductCode: "LDL-200", merchantSKU: "LDL-200" },
+        escalation: { additionalTriggers: ["Escalate if MOQ exceeds 1000"] },
+      }),
     });
 
     expect(opinion.expertName).toBe("escalation");
@@ -86,7 +88,7 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
       action: "counter",
       reasoning: "Price $4.80 exceeds target",
       extractedData: sampleData,
-      orderContext: sampleContext,
+      orderInformation: sampleOrderInformation,
       counterTerms: { targetPrice: 4.0 },
     });
 
@@ -108,7 +110,7 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
       action: "clarify",
       reasoning: "Need pricing information",
       extractedData: nullData,
-      orderContext: sampleContext,
+      orderInformation: sampleOrderInformation,
     });
 
     expect(result.clarificationEmail).toBeDefined();
@@ -117,10 +119,7 @@ describeOrSkip("Live structured output (tool_use) tests", () => {
   });
 
   it("initial email generation returns valid emailText + subjectLine", async () => {
-    const result = await pipeline.generateInitialEmail({
-      ...sampleContext,
-      negotiationStyle: "ask_for_quote",
-    });
+    const result = await pipeline.generateInitialEmail(sampleOrderInformation);
 
     expect(result.emailText.length).toBeGreaterThan(10);
     expect(result.subjectLine.length).toBeGreaterThan(0);

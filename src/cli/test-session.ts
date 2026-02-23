@@ -16,18 +16,16 @@ import { LLMService } from "../lib/llm/service";
 import { ClaudeProvider } from "../lib/llm/providers/claude";
 import { AgentPipeline } from "../lib/agent/pipeline";
 import { ConversationContext } from "../lib/agent/conversation-context";
-import type { AgentProcessRequest, AgentProcessResponse, OrderContext } from "../lib/agent/types";
+import type { AgentProcessRequest, AgentProcessResponse, OrderInformation } from "../lib/agent/types";
 import type { LLMProvider } from "../lib/llm/types";
-import { printExpertOpinion, printOrchestratorTrace, printResponse, printTotals } from "./display";
+import { printInputContext, printExpertOpinionWithContext, printOrchestratorTrace, printResponse, printTotals } from "./display";
 
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
 interface SessionFile {
   name: string;
   description: string;
-  orderContext: OrderContext;
-  negotiationRules: string;
-  escalationTriggers: string;
+  orderInformation: OrderInformation;
   supplierTurns: string[];
   expectations?: {
     turn: number;
@@ -40,30 +38,33 @@ interface SessionFile {
 function buildLLMService(): LLMService {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) { console.error("ANTHROPIC_API_KEY not set"); process.exit(1); }
-  const model = process.env.LLM_PRIMARY_MODEL ?? "claude-3-haiku-20240307";
+  const model = process.env.LLM_CLI_MODEL ?? "claude-3-haiku-20240307";
   const provider: LLMProvider = new ClaudeProvider(apiKey, model);
   return new LLMService({ primaryProvider: provider, maxRetriesPerProvider: 3, retryDelayMs: 1000 });
 }
 
-function printTurn(turn: number, supplierMsg: string, result: AgentProcessResponse, verbose: boolean): void {
+function printTurn(turn: number, supplierMsg: string, result: AgentProcessResponse, request: AgentProcessRequest, verbose: boolean): void {
   console.log(`\n${"---".repeat(20)}`);
   console.log(`TURN ${turn}`);
   console.log(`${"---".repeat(20)}`);
-  console.log(`\nSupplier said: "${supplierMsg}"`);
+
+  // Full input context
+  console.log(`\n  -- INPUT CONTEXT --`);
+  printInputContext(request, "  ");
 
   // Initial expert opinions (parallel fan-out)
   if (result.expertOpinions) {
     console.log(`\n  -- PARALLEL EXPERT FAN-OUT --`);
     for (const opinion of result.expertOpinions.slice(0, 2)) {
       console.log(`\n  [${opinion.expertName.toUpperCase()}]`);
-      printExpertOpinion(opinion, "    ");
+      printExpertOpinionWithContext(opinion, request, "    ");
     }
   }
 
   // Orchestrator trace — full reasoning chain
   if (result.orchestratorTrace) {
     console.log(`\n  -- ORCHESTRATOR DECISION LOOP --`);
-    printOrchestratorTrace(result.orchestratorTrace, "  ");
+    printOrchestratorTrace(result.orchestratorTrace, request, "  ");
   }
 
   // Response
@@ -117,16 +118,17 @@ async function main(): Promise<void> {
     fs.readFileSync(path.resolve(process.cwd(), sessionPath), "utf8")
   );
 
+  const oi = session.orderInformation;
+
   console.log(`\n${"=".repeat(60)}`);
   console.log(`SESSION: ${session.name}`);
   console.log(`${session.description}`);
   console.log(`${"=".repeat(60)}`);
-  console.log(`\nOrder: ${session.orderContext.skuName} (${session.orderContext.supplierSku})`);
-  console.log(`Qty: ${session.orderContext.quantityRequested}`);
-  console.log(`Rules: ${session.negotiationRules || "(none)"}`);
-  console.log(`Triggers: ${session.escalationTriggers || "(none)"}`);
-  if (session.orderContext.specialInstructions) {
-    console.log(`Instructions: ${session.orderContext.specialInstructions}`);
+  console.log(`\nOrder: ${oi.product.productName} (${oi.product.supplierProductCode})`);
+  console.log(`Qty: ${oi.quantity.targetQuantity}`);
+  console.log(`Pricing: target $${oi.pricing.targetPrice}, max $${oi.pricing.maximumAcceptablePrice}`);
+  if (oi.escalation?.additionalTriggers?.length) {
+    console.log(`Triggers: ${oi.escalation.additionalTriggers.join("; ")}`);
   }
 
   const service = buildLLMService();
@@ -136,7 +138,7 @@ async function main(): Promise<void> {
   // Generate initial email
   console.log(`\nGenerating initial email...`);
   try {
-    const initial = await pipeline.generateInitialEmail(session.orderContext);
+    const initial = await pipeline.generateInitialEmail(oi);
     context.addAgentMessage(initial.emailText);
     console.log(`\nAgent sent: "${initial.emailText.substring(0, 150)}..."`);
     console.log(`(${initial.inputTokens} in / ${initial.outputTokens} out, ${initial.latencyMs}ms)`);
@@ -152,11 +154,10 @@ async function main(): Promise<void> {
 
     const request: AgentProcessRequest = {
       supplierMessage: supplierMsg,
-      negotiationRules: session.negotiationRules,
-      escalationTriggers: session.escalationTriggers,
-      orderContext: session.orderContext,
+      orderInformation: oi,
       conversationHistory: context.formatForPrompt(),
       priorExtractedData: context.getMergedData(),
+      turnNumber: i + 1,
     };
 
     const result = await pipeline.process(request);
@@ -170,7 +171,7 @@ async function main(): Promise<void> {
       context.addAgentMessage(result.clarificationEmail);
     }
 
-    printTurn(i + 1, supplierMsg, result, verbose);
+    printTurn(i + 1, supplierMsg, result, request, verbose);
 
     // Check expectations
     const check = checkExpectation(i + 1, result, session.expectations);

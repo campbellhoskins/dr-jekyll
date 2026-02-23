@@ -2,13 +2,14 @@
   "name": "clarification-needed",
   "description": "Supplier responds without pricing details — should clarify",
   "supplierMessage": "Hello,\n\nThank you for reaching out. We have several options available for the stainless steel water bottles. Pricing depends on the finish and cap style you choose. Could you send us your specific requirements? We can usually do competitive pricing for larger orders.\n\nBest,\nAhmed",
-  "negotiationRules": "Accept if price is below $8.00 per unit. Prefer 30-day payment terms.",
-  "escalationTriggers": "Escalate if MOQ exceeds 500 units. Escalate if supplier mentions discontinuation.",
-  "orderContext": {
-    "skuName": "Stainless Steel Water Bottle 500ml",
-    "supplierSku": "SSWB-500",
-    "quantityRequested": "300",
-    "lastKnownPrice": 6.50
+  "orderInformation": {
+    "merchant": { "merchantId": "m1", "merchantName": "Test Merchant", "contactName": "Test Contact", "contactEmail": "test@testmerchant.com" },
+    "supplier": { "supplierName": "Bottle Supplier Co", "supplierContactName": "Ahmed", "relationshipTier": "standard" },
+    "product": { "merchantSKU": "SSWB-500", "supplierProductCode": "SSWB-500", "productName": "Stainless Steel Water Bottle 500ml" },
+    "pricing": { "currency": "USD", "targetPrice": 6.50, "maximumAcceptablePrice": 8.00, "lastKnownPrice": 6.50 },
+    "quantity": { "targetQuantity": 300, "maximumAcceptableQuantity": 500 },
+    "paymentTerms": { "requiredTerms": "Net 30" },
+    "escalation": { "additionalTriggers": ["Escalate if MOQ exceeds 500 units", "Escalate if supplier mentions discontinuation"] }
   },
   "expectedAction": "clarify",
   "expectedComplianceStatus": "partial"

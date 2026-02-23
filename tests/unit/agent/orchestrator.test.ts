@@ -1,7 +1,7 @@
 import { Orchestrator } from "@/lib/agent/orchestrator";
 import type { LLMService, LLMServiceResult } from "@/lib/llm/service";
 import type { LLMRequest } from "@/lib/llm/types";
-import type { OrderContext, ClassifiedInstructions } from "@/lib/agent/types";
+import { buildTestOrderInformation } from "../../helpers/order-information";
 
 /**
  * Routing mock: inspects outputSchema.name to return the correct response.
@@ -31,18 +31,12 @@ function createRoutingMockLLMService(
   } as unknown as LLMService;
 }
 
-const orderContext: OrderContext = {
-  skuName: "Bamboo Cutting Board",
-  supplierSku: "BCB-001",
-  quantityRequested: "500",
-  lastKnownPrice: 4.25,
-};
-
-const classifiedInstructions: ClassifiedInstructions = {
-  negotiationRules: "Accept below $5. Lead time under 45 days.",
-  escalationTriggers: "Escalate if MOQ exceeds 1000.",
-  specialInstructions: "",
-};
+const orderInformation = buildTestOrderInformation({
+  product: { productName: "Bamboo Cutting Board", supplierProductCode: "BCB-001", merchantSKU: "BCB-001" },
+  pricing: { targetPrice: 4.00, maximumAcceptablePrice: 5.00, lastKnownPrice: 4.25 },
+  quantity: { targetQuantity: 500 },
+  escalation: { additionalTriggers: ["Escalate if MOQ exceeds 1000 units"] },
+});
 
 // ─── Mock responses ──────────────────────────────────────────────────────────
 
@@ -144,8 +138,7 @@ describe("Orchestrator", () => {
 
     const result = await orchestrator.run(
       "Price is $4.50 per unit, MOQ 500, lead time 25-30 days.",
-      orderContext,
-      classifiedInstructions
+      orderInformation
     );
 
     expect(result.decision.action).toBe("accept");
@@ -174,8 +167,7 @@ describe("Orchestrator", () => {
 
     const result = await orchestrator.run(
       "Price is $6.00 per unit.",
-      orderContext,
-      classifiedInstructions
+      orderInformation
     );
 
     expect(result.decision.action).toBe("counter");
@@ -201,8 +193,7 @@ describe("Orchestrator", () => {
 
     const result = await orchestrator.run(
       "Price is $4.50, MOQ 2000 units.",
-      orderContext,
-      classifiedInstructions
+      orderInformation
     );
 
     expect(result.decision.action).toBe("escalate");
@@ -262,8 +253,7 @@ describe("Orchestrator", () => {
 
     const result = await orchestrator.run(
       "I can do $4.50 per unit.",
-      orderContext,
-      classifiedInstructions
+      orderInformation
     );
 
     expect(result.decision.action).toBe("clarify");
@@ -303,7 +293,7 @@ describe("Orchestrator", () => {
     } as unknown as LLMService;
 
     const orchestrator = new Orchestrator(service);
-    await orchestrator.run("Price is $4.50.", orderContext, classifiedInstructions);
+    await orchestrator.run("Price is $4.50.", orderInformation);
 
     // First two calls should be extraction and escalation (parallel)
     // Third should be orchestrator
@@ -322,8 +312,7 @@ describe("Orchestrator", () => {
 
     const result = await orchestrator.run(
       "Some message",
-      orderContext,
-      classifiedInstructions
+      orderInformation
     );
 
     // Extraction failed but pipeline still works — orchestrator sees the failure
@@ -341,8 +330,7 @@ describe("Orchestrator", () => {
 
     const result = await orchestrator.run(
       "Price is $4.50.",
-      orderContext,
-      classifiedInstructions
+      orderInformation
     );
 
     expect(result.decision.action).toBe("escalate");
@@ -356,15 +344,20 @@ describe("Orchestrator", () => {
     });
     const orchestrator = new Orchestrator(service);
 
+    const noTriggersOI = buildTestOrderInformation({
+      product: { productName: "Bamboo Cutting Board", supplierProductCode: "BCB-001", merchantSKU: "BCB-001" },
+      pricing: { targetPrice: 4.00, maximumAcceptablePrice: 5.00, lastKnownPrice: 4.25 },
+      quantity: { targetQuantity: 500 },
+    });
+    // Remove escalation triggers entirely
+    delete noTriggersOI.escalation;
+
     const result = await orchestrator.run(
       "Price is $4.50.",
-      orderContext,
-      { ...classifiedInstructions, escalationTriggers: "" }
+      noTriggersOI
     );
 
     expect(result.decision.action).toBe("accept");
-    // Only 2 LLM calls: extraction + orchestrator (escalation skipped)
-    expect(service.call).toHaveBeenCalledTimes(2);
   });
 
   it("trace captures all iterations", async () => {
@@ -377,8 +370,7 @@ describe("Orchestrator", () => {
 
     const result = await orchestrator.run(
       "Price is $4.50.",
-      orderContext,
-      classifiedInstructions
+      orderInformation
     );
 
     expect(result.trace.iterations.length).toBe(1);
@@ -396,8 +388,7 @@ describe("Orchestrator", () => {
 
     await orchestrator.run(
       "New price $4.50.",
-      orderContext,
-      classifiedInstructions,
+      orderInformation,
       "[AGENT] Can you do better?\n[SUPPLIER] Let me check."
     );
 

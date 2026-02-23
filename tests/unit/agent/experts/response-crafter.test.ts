@@ -1,7 +1,8 @@
 import { ResponseCrafter } from "@/lib/agent/experts/response-crafter";
 import type { LLMService, LLMServiceResult } from "@/lib/llm/service";
-import type { OrderContext, ExtractedQuoteData } from "@/lib/agent/types";
+import type { ExtractedQuoteData } from "@/lib/agent/types";
 import type { ResponseCrafterInput } from "@/lib/agent/experts/types";
+import { buildTestOrderInformation } from "../../../helpers/order-information";
 
 function createMockLLMService(response: string | Error): LLMService {
   return {
@@ -22,12 +23,11 @@ function createMockLLMService(response: string | Error): LLMService {
   } as unknown as LLMService;
 }
 
-const orderContext: OrderContext = {
-  skuName: "Bamboo Cutting Board",
-  supplierSku: "BCB-001",
-  quantityRequested: "500",
-  lastKnownPrice: 4.25,
-};
+const orderInformation = buildTestOrderInformation({
+  product: { productName: "Bamboo Cutting Board", supplierProductCode: "BCB-001", merchantSKU: "BCB-001" },
+  pricing: { targetPrice: 4.00, maximumAcceptablePrice: 5.00, lastKnownPrice: 4.25 },
+  quantity: { targetQuantity: 500 },
+});
 
 const extractedData: ExtractedQuoteData = {
   quotedPrice: 4.5,
@@ -61,7 +61,7 @@ describe("ResponseCrafter", () => {
       action: "accept",
       reasoning: "All rules satisfied at $4.50",
       extractedData,
-      orderContext,
+      orderInformation,
     });
 
     expect(result.proposedApproval).toBeDefined();
@@ -79,7 +79,7 @@ describe("ResponseCrafter", () => {
       action: "counter",
       reasoning: "Price too high",
       extractedData,
-      orderContext,
+      orderInformation,
       counterTerms: { targetPrice: 3.8 },
     });
 
@@ -97,7 +97,7 @@ describe("ResponseCrafter", () => {
       action: "clarify",
       reasoning: "Missing lead time info",
       extractedData,
-      orderContext,
+      orderInformation,
     });
 
     expect(result.clarificationEmail).toBeDefined();
@@ -113,7 +113,7 @@ describe("ResponseCrafter", () => {
       action: "clarify",
       reasoning: "Missing info",
       extractedData,
-      orderContext,
+      orderInformation,
       needsAnalysis: {
         type: "needs",
         missingFields: ["leadTime"],
@@ -136,7 +136,7 @@ describe("ResponseCrafter", () => {
       action: "escalate",
       reasoning: "MOQ exceeds trigger threshold",
       extractedData,
-      orderContext,
+      orderInformation,
     });
 
     expect(result.escalationReason).toBe("MOQ exceeds trigger threshold");
@@ -151,7 +151,7 @@ describe("ResponseCrafter", () => {
       action: "counter",
       reasoning: "Price too high",
       extractedData,
-      orderContext,
+      orderInformation,
       counterTerms: { targetPrice: 3.8 },
     });
 
@@ -167,7 +167,7 @@ describe("ResponseCrafter", () => {
       action: "clarify",
       reasoning: "Need more info",
       extractedData,
-      orderContext,
+      orderInformation,
     });
 
     expect(result.escalationReason).toContain("failed");
@@ -182,7 +182,7 @@ describe("ResponseCrafter", () => {
       action: "accept",
       reasoning: "Accept the deal",
       extractedData: null,
-      orderContext,
+      orderInformation,
     });
 
     expect(result.proposedApproval!.quantity).toBe(500); // from quantityRequested
@@ -197,7 +197,7 @@ describe("ResponseCrafter", () => {
       action: "counter",
       reasoning: "Price too high",
       extractedData,
-      orderContext,
+      orderInformation,
       counterTerms: { targetPrice: 3.8 },
     });
 
@@ -213,7 +213,7 @@ describe("ResponseCrafter", () => {
       action: "clarify",
       reasoning: "Missing info",
       extractedData,
-      orderContext,
+      orderInformation,
     });
 
     const callArg = (service.call as jest.Mock).mock.calls[0][0];
@@ -228,7 +228,7 @@ describe("ResponseCrafter", () => {
       action: "counter",
       reasoning: "Price too high",
       extractedData,
-      orderContext,
+      orderInformation,
       counterTerms: { targetPrice: 3.8 },
     });
 

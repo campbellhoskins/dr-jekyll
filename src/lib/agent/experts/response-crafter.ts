@@ -2,7 +2,7 @@ import type { LLMService } from "../../llm/service";
 import type {
   AgentAction,
   ExtractedQuoteData,
-  OrderContext,
+  OrderInformation,
   CounterOffer,
   ProposedApproval,
   GeneratedResponse,
@@ -26,7 +26,7 @@ export class ResponseCrafter {
   async craft(input: ResponseCrafterInput): Promise<GeneratedResponse> {
     switch (input.action) {
       case "accept":
-        return this.buildAcceptResponse(input.extractedData, input.orderContext, input.reasoning);
+        return this.buildAcceptResponse(input.extractedData, input.orderInformation, input.reasoning);
       case "counter":
         return this.buildCounterResponse(input);
       case "clarify":
@@ -38,10 +38,10 @@ export class ResponseCrafter {
 
   private buildAcceptResponse(
     data: ExtractedQuoteData | null,
-    orderContext: OrderContext,
+    orderInformation: OrderInformation,
     reasoning: string
   ): GeneratedResponse {
-    const quantity = data?.availableQuantity ?? parseQuantity(orderContext.quantityRequested);
+    const quantity = data?.availableQuantity ?? orderInformation.quantity.targetQuantity;
     const price = data?.quotedPriceUsd ?? data?.quotedPrice ?? 0;
     const total = Math.round(quantity * price * 100) / 100;
 
@@ -62,9 +62,8 @@ export class ResponseCrafter {
       input.extractedData!,
       input.reasoning,
       counterTerms,
-      input.orderContext,
-      input.conversationHistory,
-      input.specialInstructions
+      input.orderInformation,
+      input.conversationHistory
     );
 
     try {
@@ -99,10 +98,9 @@ export class ResponseCrafter {
     const prompt = buildClarificationCrafterPrompt(
       input.extractedData,
       input.reasoning,
-      input.orderContext,
+      input.orderInformation,
       input.needsAnalysis,
-      input.conversationHistory,
-      input.specialInstructions
+      input.conversationHistory
     );
 
     try {
@@ -129,9 +127,4 @@ export class ResponseCrafter {
       };
     }
   }
-}
-
-function parseQuantity(quantityRequested: string): number {
-  const match = quantityRequested.match(/(\d+)/);
-  return match ? parseInt(match[1], 10) : 0;
 }

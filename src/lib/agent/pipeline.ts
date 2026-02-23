@@ -4,9 +4,8 @@ import type {
   AgentProcessResponse,
   ComplianceStatus,
   ExtractionResult,
-  OrderContext,
+  OrderInformation,
 } from "./types";
-import { InstructionClassifier } from "./instruction-classifier";
 import { buildInitialEmailPrompt } from "./prompts";
 import { parseResponseGenerationOutput } from "./output-parser";
 import { Orchestrator } from "./orchestrator";
@@ -31,17 +30,15 @@ export class AgentPipeline {
   private llmService: LLMService;
   private orchestrator: Orchestrator;
   private responseCrafter: ResponseCrafter;
-  private instructionClassifier: InstructionClassifier;
 
   constructor(llmService: LLMService) {
     this.llmService = llmService;
     this.orchestrator = new Orchestrator(llmService);
     this.responseCrafter = new ResponseCrafter(llmService);
-    this.instructionClassifier = new InstructionClassifier(llmService);
   }
 
-  async generateInitialEmail(orderContext: OrderContext): Promise<InitialEmailResult> {
-    const prompt = buildInitialEmailPrompt(orderContext);
+  async generateInitialEmail(orderInformation: OrderInformation): Promise<InitialEmailResult> {
+    const prompt = buildInitialEmailPrompt(orderInformation);
     const llmResult = await this.llmService.call(prompt);
     const parsed = parseResponseGenerationOutput(llmResult.response.content);
 
@@ -69,38 +66,13 @@ export class AgentPipeline {
   }
 
   async process(request: AgentProcessRequest): Promise<AgentProcessResponse> {
-    // Stage 0: Classify merchant instructions if provided as single field
-    let { negotiationRules, escalationTriggers } = request;
-    let orderContext = request.orderContext;
-
-    if (request.merchantInstructions) {
-      const classified = await this.instructionClassifier.classify(
-        request.merchantInstructions,
-        request.orderContext
-      );
-      negotiationRules = classified.negotiationRules || negotiationRules;
-      escalationTriggers = classified.escalationTriggers || escalationTriggers;
-      if (classified.specialInstructions) {
-        orderContext = {
-          ...request.orderContext,
-          specialInstructions: classified.specialInstructions,
-        };
-      }
-    }
-
-    const classifiedInstructions = {
-      negotiationRules,
-      escalationTriggers,
-      specialInstructions: orderContext.specialInstructions ?? "",
-    };
-
     // Stage 1-2: Orchestrator runs experts in parallel, makes decision via LLM loop
     const orchestratorResult = await this.orchestrator.run(
       request.supplierMessage,
-      orderContext,
-      classifiedInstructions,
+      request.orderInformation,
       request.conversationHistory,
-      request.priorExtractedData
+      request.priorExtractedData,
+      request.turnNumber
     );
 
     const { decision, trace, expertOpinions, extractedData, extractionOpinion, needsAnalysis } = orchestratorResult;
@@ -128,9 +100,8 @@ export class AgentPipeline {
       action,
       reasoning: decision.reasoning,
       extractedData,
-      orderContext,
+      orderInformation: request.orderInformation,
       conversationHistory: request.conversationHistory,
-      specialInstructions: orderContext.specialInstructions,
       counterTerms: decision.counterTerms ?? undefined,
       needsAnalysis,
     });
