@@ -39,7 +39,14 @@
       "WebFetch(domain:vercel.com)",
       "Bash(npm run pipeline:*)",
       "Bash(npm run extract:*)",
-      "Bash(npm run session:*)"
+      "Bash(npm run session:*)",
+      "Bash(tail:)",
+      "Bash(wc:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(cd:*)",
+      "Bash(cd /c/src/personal/dr-jekyll && npx tsc --noEmit 2>&1)",
+      "Bash(cd /c/src/personal/dr-jekyll && npm run lint 2>&1)"
     ]
   }
 }
